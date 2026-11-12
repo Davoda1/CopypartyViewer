@@ -1,0 +1,83 @@
+[
+  {
+    "file": "fltk-1.4.5-source.tar.gz",
+    "url": "https://github.com/fltk/fltk/releases/download/release-1.4.5/fltk-1.4.5-source.tar.gz",
+    "sha256": "eede1fb2b8e9c2e581e77082e15252145855c79aad30070ee3b24aabe2f926f1",
+    "bytes": 9292393,
+    "name": "FLTK",
+    "version": "1.4.5",
+    "license": "LGPL-2.0-or-later with FLTK static-linking exception"
+  },
+  {
+    "file": "curl-8.23.0.tar.xz",
+    "url": "https://curl.se/download/curl-8.23.0.tar.xz",
+    "sha256": "8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5",
+    "bytes": 2990916,
+    "name": "libcurl",
+    "version": "8.23.0",
+    "license": "curl"
+  },
+  {
+    "file": "openssl-4.1.0.tar.gz",
+    "url": "https://github.com/openssl/openssl/releases/download/openssl-4.1.0/openssl-4.1.0.tar.gz",
+    "sha256": "50c17baf54cb008f6ce42d50deb4b28050a1aad711636cabd4b241c7e90cc2fd",
+    "bytes": 55738000,
+    "name": "OpenSSL",
+    "version": "4.1.0",
+    "license": "Apache-2.0"
+  },
+  {
+    "file": "libpng-1.6.59.tar.xz",
+    "url": "https://downloads.sourceforge.net/project/libpng/libpng16/1.6.59/libpng-1.6.59.tar.xz",
+    "sha256": "d80dd2a38a37f803cb9b6ac7b14bd6e74ddc3b654780a8380bdf93523fdb4389",
+    "bytes": 1074540,
+    "name": "libpng",
+    "version": "1.6.59",
+    "license": "libpng-2.0"
+  },
+  {
+    "file": "libjpeg-turbo-3.2.1.tar.gz",
+    "url": "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz",
+    "sha256": "c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f",
+    "bytes": 2549854,
+    "name": "libjpeg-turbo",
+    "version": "3.2.1",
+    "license": "BSD-3-Clause, IJG, Zlib"
+  },
+  {
+    "file": "zlib-1.4.tar.gz",
+    "url": "https://zlib.net/zlib-1.4.tar.gz",
+    "sha256": "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584",
+    "bytes": 1507140,
+    "name": "zlib",
+    "version": "1.4",
+    "license": "Zlib"
+  },
+  {
+    "file": "libwebp-1.6.0.tar.gz",
+    "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz",
+    "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+    "bytes": 4296070,
+    "name": "libwebp",
+    "version": "1.6.0",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "file": "json-3.12.0.tar.xz",
+    "url": "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz",
+    "sha256": "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa",
+    "bytes": 114576,
+    "name": "nlohmann/json",
+    "version": "3.12.0",
+    "license": "MIT"
+  },
+  {
+    "name": "NanoSVG",
+    "version": "bundled in FLTK 1.4.5",
+    "license": "Zlib",
+    "files": {
+      "nanosvg/nanosvg.h": "b9cc72b1e19e86356fb02892e04b66918d94d7390b6f56df504284bc109a6c11",
+      "nanosvg/nanosvgrast.h": "7b877b2ac8e210330f12f6a92bb0f5e5f3891a785bdc32f071330924853ed058"
+    }
+  }
+]

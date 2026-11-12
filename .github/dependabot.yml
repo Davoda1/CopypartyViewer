@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: master
+    schedule:
+      interval: weekly
+    # Keep master as the repository's only branch. Updates are reviewed manually.
+    open-pull-requests-limit: 0

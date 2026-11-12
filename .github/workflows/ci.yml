@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  repository:
+    name: Repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify repository, dependencies and workflow policy
+        run: python3 scripts/verify_repository.py
+      - name: Exercise archive and publication rejection paths
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+
+  linux:
+    name: Linux
+    needs: repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install native build and display tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential cmake python3 perl nasm libx11-dev libxext-dev libxft-dev libxrender-dev libxfixes-dev libxcursor-dev libxinerama-dev libfontconfig1-dev xvfb xauth
+      - name: Identify the compiler and runner image
+        id: toolchain
+        run: |
+          echo "identity=$(g++ -dumpfullversion)-${ImageVersion}" >> "$GITHUB_OUTPUT"
+          g++ --version
+          cmake --version
+      - name: Restore pinned static dependency build
+        id: deps-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ci/deps
+          key: deps-linux-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', 'vendor/dependencies.json', 'vendor/sources/SHA256SUMS') }}
+      - name: Build pinned dependencies
+        run: make deps BUILD_DIR=build/ci JOBS=3 CMAKE_ARGS='-DCPV_VERIFY_PUBLIC_DEFAULTS=ON -DCPV_TEST_HTTP=ON -DCPV_TEST_RETRO=ON'
+      - name: Save trusted dependency cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.deps-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ci/deps
+          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
+      - name: Initialize C++ security analysis
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: c-cpp
+          build-mode: manual
+          queries: security-extended
+      - name: Build the application and regression executables
+        run: make build BUILD_DIR=build/ci JOBS=3 CMAKE_ARGS='-DCPV_VERIFY_PUBLIC_DEFAULTS=ON -DCPV_TEST_HTTP=ON -DCPV_TEST_RETRO=ON'
+      - name: Run core, public-default, HTTP, preview and Retro checks
+        run: xvfb-run --auto-servernum ctest --test-dir build/ci/app --output-on-failure
+      - name: Inspect Linux package contents and platform imports
+        run: |
+          cmake -DCPV_BUILD_DIR="$PWD/build/ci" -P cmake/PackageRelease.cmake
+          python3 scripts/verify_packages.py --platform linux
+      - name: Complete C++ security analysis
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: /language:c-cpp
+
+  windows:
+    name: Windows
+    needs: repository
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select native MinGW and install the pinned assembler
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (!(Test-Path 'C:\mingw64\bin\g++.exe')) { throw 'Hosted x64 MinGW compiler is missing' }
+          Add-Content $env:GITHUB_PATH 'C:\mingw64\bin'
+          $archive = Join-Path $env:RUNNER_TEMP 'nasm-3.02-win64.zip'
+          Invoke-WebRequest 'https://www.nasm.us/pub/nasm/releasebuilds/3.02/win64/nasm-3.02-win64.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '161d0bfaff53c2f9e9f3e69fd0672323ebabafd1268976a5cec11be92a19aee7') { throw 'NASM archive hash mismatch' }
+          $destination = Join-Path $env:RUNNER_TEMP 'cpv-nasm'
+          Expand-Archive $archive -DestinationPath $destination
+          Add-Content $env:GITHUB_PATH (Join-Path $destination 'nasm-3.02')
+      - name: Identify the compiler and runner image
+        id: toolchain
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $compiler = & g++ -dumpfullversion
+          Add-Content $env:GITHUB_OUTPUT "identity=$compiler-$env:ImageVersion"
+          g++ --version
+          mingw32-make --version
+          nasm --version
+          cmake --version
+      - name: Restore pinned static dependency build
+        id: deps-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ci/deps
+          key: deps-windows-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', 'vendor/dependencies.json', 'vendor/sources/SHA256SUMS') }}
+      - name: Build pinned dependencies
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          mingw32-make deps BUILD_DIR=build/ci JOBS=3 'CMAKE_ARGS=-DCPV_VERIFY_PUBLIC_DEFAULTS=ON -DCPV_TEST_HTTP=ON -DCPV_TEST_RETRO=ON'
+      - name: Save trusted dependency cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.deps-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/ci/deps
+          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
+      - name: Build the application and regression executables
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          mingw32-make build BUILD_DIR=build/ci JOBS=3 'CMAKE_ARGS=-DCPV_VERIFY_PUBLIC_DEFAULTS=ON -DCPV_TEST_HTTP=ON -DCPV_TEST_RETRO=ON'
+      - name: Run core, public-default, HTTP, preview and Retro checks
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          ctest --test-dir build/ci/app --output-on-failure
+      - name: Inspect Windows package contents and platform imports
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          cmake "-DCPV_BUILD_DIR=$((Get-Location).Path)/build/ci" -P cmake/PackageRelease.cmake
+          python scripts/verify_packages.py --platform windows

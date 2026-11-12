@@ -1,0 +1,19 @@
+# Keep packaged documentation identical in native Linux and Windows checkouts.
+* text=auto eol=lf
+
+# Preserve upstream source archives and image/decoder fixtures byte for byte.
+*.tar.gz binary
+*.tar.xz binary
+*.zip binary
+*.deb binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.gif binary
+*.webp binary
+*.bmp binary
+*.rgba binary
+
+# Retain the supplied SVG artwork's original source bytes.
+assets/settings-gear.svg -text

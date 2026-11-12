@@ -1,0 +1,6 @@
+if(NOT CPV_PREFIX OR CPV_PREFIX STREQUAL "/")
+  message(FATAL_ERROR "Set CPV_PREFIX to the original installation prefix")
+endif()
+file(REMOVE "${CPV_PREFIX}/bin/copyparty-viewer" "${CPV_PREFIX}/share/applications/copyparty-viewer.desktop" "${CPV_PREFIX}/share/pixmaps/copyparty-viewer.png")
+file(REMOVE_RECURSE "${CPV_PREFIX}/share/doc/copyparty-viewer")
+message(STATUS "Removed Copyparty Viewer files from ${CPV_PREFIX}; user configuration is retained")

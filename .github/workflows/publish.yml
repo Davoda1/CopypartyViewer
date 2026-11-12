@@ -1,0 +1,95 @@
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full lowercase SHA of the current master commit
+        required: true
+        type: string
+      ci_run_id:
+        description: CI push run ID for that exact master commit
+        required: true
+        type: string
+      release_id:
+        description: Existing draft release ID for v1.0.0
+        required: true
+        type: string
+      windows_sha256:
+        description: Locally verified Windows ZIP SHA-256
+        required: true
+        type: string
+      deb_sha256:
+        description: Locally verified Debian package SHA-256
+        required: true
+        type: string
+      linux_sha256:
+        description: Locally verified Linux TAR.GZ SHA-256
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  security-events: read
+
+concurrency:
+  group: publish-v1.0.0
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  RELEASE_COMMIT: ${{ inputs.commit }}
+  RELEASE_CI_RUN: ${{ inputs.ci_run_id }}
+  RELEASE_ID: ${{ inputs.release_id }}
+  RELEASE_WINDOWS_SHA256: ${{ inputs.windows_sha256 }}
+  RELEASE_DEB_SHA256: ${{ inputs.deb_sha256 }}
+  RELEASE_LINUX_SHA256: ${{ inputs.linux_sha256 }}
+
+jobs:
+  validate:
+    name: Validate draft
+    if: github.repository == 'Davoda1/CopypartyViewer' && github.ref == 'refs/heads/master' && github.sha == inputs.commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    # GitHub requires push access even to read an unpublished draft's assets.
+    # This job only validates; the helper blocks mutations without --publish.
+    permissions:
+      contents: write
+      actions: read
+      security-events: read
+    outputs:
+      receipt: ${{ steps.validate.outputs.receipt }}
+    steps:
+      - name: Check out the dispatched immutable revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Wait for exact CI and validate the three draft assets
+        id: validate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/release_gate.py
+
+  publish:
+    name: Publish
+    needs: validate
+    if: github.repository == 'Davoda1/CopypartyViewer' && github.ref == 'refs/heads/master' && github.sha == inputs.commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: write
+      actions: read
+      security-events: read
+    steps:
+      - name: Check out the same validated revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Revalidate unchanged CI, master, tag and assets, then publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VALIDATION_RECEIPT: ${{ needs.validate.outputs.receipt }}
+        run: python3 scripts/release_gate.py --publish

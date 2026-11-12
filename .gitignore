@@ -1,0 +1,28 @@
+# Local build products and generated packages.
+/build*/
+/dist*/
+/CMakeFiles/
+/CMakeCache.txt
+/Testing/
+__pycache__/
+*.py[cod]
+
+# Local configuration, accounts, credentials and diagnostics.
+/.private/
+.env
+.env.*
+settings.json
+*private*.cmake
+site-defaults.cmake
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

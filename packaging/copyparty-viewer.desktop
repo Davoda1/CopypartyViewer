@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Copyparty Viewer
+Comment=Browse and preview files from a Copyparty server
+Exec=copyparty-viewer
+Icon=copyparty-viewer
+Terminal=false
+Categories=Network;FileTransfer;
+StartupWMClass=CopypartyViewer
+Keywords=Copyparty;files;viewer;

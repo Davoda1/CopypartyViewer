@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible problem in Copyparty Viewer.
+body:
+  - type: markdown
+    attributes:
+      value: Do not include passwords, saved settings, private server addresses or unredacted account screenshots. Use the public demo or a small synthetic fixture when possible.
+  - type: input
+    id: version
+    attributes:
+      label: Application version and package
+      placeholder: 1.0.0, Windows portable ZIP
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and display environment
+      placeholder: Windows 11 x64, or Linux amd64 with X11
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal public or synthetic example when possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional evidence
+      description: Sanitized errors or screenshots; compiler and CMake versions for a source build.
