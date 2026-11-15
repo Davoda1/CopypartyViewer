@@ -1,4 +1,4 @@
-// Copyparty Viewer 1.0.0 — Copyright (C) 2026 davoda1
+// Copyparty Viewer 2.0.0 — Copyright (C) 2026 davoda1
 // SPDX-License-Identifier: MIT
 #include "core.hpp"
 #include <curl/curl.h>
@@ -262,6 +262,12 @@ std::string text_field(const json& j,const char* key,const std::string& fallback
     if(!j.contains(key)||!j[key].is_string())return fallback;
     auto value=j[key].get<std::string>(); return value.size()<=limit?value:fallback;
 }
+bool valid_code_theme(const std::string& value) {
+    for (const char* theme : {"default", "vscode", "github", "monokai", "nord",
+                              "dracula", "solarized", "codex", "xcode", "ayu"})
+        if (value == theme) return true;
+    return false;
+}
 void add_warning(std::string& warning,const std::string& text) { if(!warning.empty())warning+=" "; warning+=text; }
 
 // Metadata is displayed as text, never as server-provided markup or controls.
@@ -419,6 +425,7 @@ Response perform(const Config& config,const std::string& path,FetchKind kind,Tra
     const auto server=normalize_server(config.server);
     auto base=split_url(server);
     const std::string query=kind==FetchKind::File?"dl":kind==FetchKind::Terminal?"ls=v":"ls";
+    const std::string user_agent="CopypartyViewer/"+std::string(version);
     std::string url=make_url(server,path)+"?"+query;
     Response response;
     std::set<std::string> visited;
@@ -431,7 +438,7 @@ Response perform(const Config& config,const std::string& path,FetchKind kind,Tra
         Transfer transfer{&control,&response,output,maximum,0,0,{},{}};
         std::array<char,CURL_ERROR_SIZE> err{};
         curl_easy_setopt(curl.get(),CURLOPT_URL,url.c_str());
-        curl_easy_setopt(curl.get(),CURLOPT_USERAGENT,"CopypartyViewer/1.0.0");
+        curl_easy_setopt(curl.get(),CURLOPT_USERAGENT,user_agent.c_str());
         curl_easy_setopt(curl.get(),CURLOPT_PROTOCOLS_STR,"http,https");
         curl_easy_setopt(curl.get(),CURLOPT_REDIR_PROTOCOLS_STR,"http,https");
         curl_easy_setopt(curl.get(),CURLOPT_FOLLOWLOCATION,0L);
@@ -557,6 +564,10 @@ Config load_config(const std::filesystem::path& path,std::string& warning) {
         if(j.contains("schema_version")&&j["schema_version"]!=1)add_warning(warning,"Unknown settings schema; recognized fields were restored.");
         if(j.contains("modern_ui")&&j["modern_ui"].is_boolean())c.modern_ui=j["modern_ui"].get<bool>();
         if(j.contains("show_directory_sizes")&&j["show_directory_sizes"].is_boolean())c.show_directory_sizes=j["show_directory_sizes"].get<bool>();
+        if(j.contains("appearance")&&j["appearance"].is_object()) {
+            const auto theme=text_field(j["appearance"],"code_theme","default",32);
+            if(valid_code_theme(theme))c.code_theme=theme;
+        }
         try{c.server=normalize_server(text_field(j,"server_url",c.server,32768));}catch(...){add_warning(warning,"Invalid saved server URL; using the compiled default.");}
         auto saved=text_field(j,"last_path","/",32768);
         try{c.last_path=canonical_path(saved);}catch(...){add_warning(warning,"Invalid saved path; opening the server root.");}
@@ -588,6 +599,7 @@ bool save_config(const std::filesystem::path& path,const Config& c,std::string& 
 #endif
         json j={{"schema_version",1},{"server_url",normalize_server(c.server)},{"last_path",canonical_path(c.last_path)},
             {"modern_ui",c.modern_ui},{"show_directory_sizes",c.show_directory_sizes},
+            {"appearance",{{"code_theme",valid_code_theme(c.code_theme)?c.code_theme:"default"}}},
             {"credentials",{{"format","cpv-obfuscated-v1"},{"saved",c.credentials_saved},
                 {"username",c.credentials_saved?obfuscate(c.username):""},{"password",c.credentials_saved?obfuscate(c.password):""}}},
             {"window",geometry_json(c.main_window)},{"settings_window",geometry_json(c.settings_window)}};
@@ -620,6 +632,46 @@ std::string resolve_path(const std::string& input,const std::string& current,con
 std::string make_url(const std::string& server,const std::string& path) {
     auto normalized=normalize_server(server);auto p=canonical_path(path);
     return normalized+escape_path(p.substr(1));
+}
+DocumentLink resolve_document_link(const std::string& input,const std::string& current_file_path,const std::string& server) {
+    if(input.size()>32768)throw std::runtime_error("The document link is too long.");
+    valid_utf8(input);
+    if(input.find('\\')!=std::string::npos)throw std::runtime_error("Document links cannot contain backslashes.");
+    const auto value=trim(input);
+    const auto hash=value.find('#');
+    const auto raw_anchor=hash==std::string::npos?std::string():value.substr(hash+1);
+    const auto anchor=unescape(raw_anchor,false);
+    if(anchor.find('\\')!=std::string::npos)throw std::runtime_error("Document link anchors cannot contain backslashes.");
+    const auto destination=value.substr(0,hash);
+    if(destination.empty())return {DocumentLink::Kind::Anchor,"",anchor};
+    if(destination.compare(0,2,"//")==0)throw std::runtime_error("Use a full HTTP or HTTPS URL instead of a network-path link.");
+
+    const auto colon=destination.find(':');
+    const auto separator=destination.find_first_of("/?");
+    const bool has_scheme=colon!=std::string::npos&&(separator==std::string::npos||colon<separator);
+    const auto query=destination.find('?');
+    if(has_scheme) {
+        const auto scheme=lower(destination.substr(0,colon));
+        if((scheme!="http"&&scheme!="https")||destination.compare(colon,3,"://")!=0)
+            throw std::runtime_error("Only HTTP and HTTPS document links can open outside the viewer.");
+        const auto full=split_url(destination,true);
+        const auto base=split_url(normalize_server(server));
+        if(query==std::string::npos&&full.origin==base.origin&&below_base(full.path,base.path))
+            return {DocumentLink::Kind::ServerPath,resolve_path(destination,current_file_path,server),anchor};
+        // Preserve the explicitly clicked, credential-free URL. Queries are
+        // browser-only; they must never enter an authenticated viewer request.
+        return {DocumentLink::Kind::Browser,value,anchor};
+    }
+
+    const auto path_part=destination.substr(0,query);
+    const auto path=path_part.empty()?canonical_path(current_file_path.empty()?"/":current_file_path)
+                                    :resolve_path(path_part,current_file_path,server);
+    if(query!=std::string::npos) {
+        auto url=make_url(server,path)+destination.substr(query);
+        if(hash!=std::string::npos)url+="#"+raw_anchor;
+        return {DocumentLink::Kind::Browser,std::move(url),anchor};
+    }
+    return {DocumentLink::Kind::ServerPath,path,anchor};
 }
 std::string parent_path(const std::string& path) {
     auto p=canonical_path(path);if(p=="/")return p;if(p.back()=='/')p.pop_back();

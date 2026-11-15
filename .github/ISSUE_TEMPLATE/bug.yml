@@ -8,7 +8,7 @@ body:
     id: version
     attributes:
       label: Application version and package
-      placeholder: 1.0.0, Windows portable ZIP
+      placeholder: 2.0.0, Windows portable ZIP
     validations:
       required: true
   - type: input

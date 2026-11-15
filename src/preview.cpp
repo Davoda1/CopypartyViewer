@@ -1,4 +1,4 @@
-// Copyparty Viewer 1.0.0 — Copyright (C) 2026 davoda1
+// Copyparty Viewer 2.0.0 — Copyright (C) 2026 davoda1
 // SPDX-License-Identifier: MIT
 #include "preview.hpp"
 #include <png.h>
@@ -147,7 +147,7 @@ ImageData webp_decode(Bytes b) {
 ImageData svg_decode(Bytes b) {
     // NanoSVG renders geometry only: it never fetches resources or executes scripts.
     // Input and path-count bounds limit memory/cost before rasterization. Compressed
-    // SVG is intentionally not passed to FLTK's unbounded gzip convenience reader.
+    // SVG is intentionally not passed to FLTK's unbounded gzip convenience decoder.
     if (b.size > 4u * 1024u * 1024u) invalid("SVG exceeds the 4 MiB vector preview limit");
     std::string xml(reinterpret_cast<const char*>(b.data), b.size);
     if (xml.find('\0') != std::string::npos) invalid("SVG contains embedded NUL bytes");
@@ -439,19 +439,22 @@ ImageData decode_image(const std::vector<unsigned char>& bytes,const std::string
     invalid("unsupported or unrecognized image format");
 }
 
-bool text_supported(const std::string& filename,const std::string& content_type,const std::vector<unsigned char>& bytes) {
+bool text_supported(const std::string& filename,const std::string& content_type,const std::vector<unsigned char>& bytes,bool allow_encoding_override) {
     const auto type=mime(content_type),ext=extension(filename);
-    const char* extensions[]={"txt","md","markdown","log","csv","tsv","json","xml","html","htm","css","js","mjs","ts","jsx","tsx","c","cc","cpp","cxx","h","hpp","py","sh","bash","bat","cmd","ps1","ini","cfg","conf","toml","yaml","yml","sql","rs","go","java","cmake","make","srt","vtt","nfo","desktop"};
+    const char* extensions[]={"txt","md","markdown","mdown","mkd","mkdn","mdtext","mdtxt","log","csv","tsv","json","jsonc","json5","xml","html","htm","xhtml","css","scss","js","mjs","cjs","ts","jsx","tsx","c","cc","cpp","cxx","h","hpp","hxx","py","pyw","sh","bash","zsh","bat","cmd","ps1","psm1","psd1","ini","cfg","conf","toml","yaml","yml","sql","rs","go","java","cs","php","cmake","make","srt","vtt","nfo","desktop"};
     const bool known=type.rfind("text/",0)==0 || type=="application/json" || type=="application/xml" || type=="application/javascript" || in_list(ext,extensions,std::size(extensions));
     const std::size_t count=std::min<std::size_t>(bytes.size(),8192);
     unsigned controls=0,invalid_utf8=0;
     for(std::size_t i=0;i<count;) {
-        unsigned c=bytes[i];if(c==0)return false;
+        // A recognized text format can still be BOM-less UTF-16/32 that Auto
+        // cannot identify. Let the UI offer its explicit encoding selector;
+        // the source preparer removes control characters before display.
+        unsigned c=bytes[i];if(c==0)return allow_encoding_override&&known;
         if(c<32&&c!='\t'&&c!='\r'&&c!='\n'&&c!=27&&c!='\f'&&c!='\b')++controls;
         unsigned n=utf8_length(bytes.data()+i,bytes.size()-i);
         if(!n){++invalid_utf8;++i;}else i+=n;
     }
-    if(controls>count/100+1)return false;
+    if(controls>count/100+1)return allow_encoding_override&&known;
     return known || (invalid_utf8==0 && (type.empty()||type=="application/octet-stream"||type=="binary/octet-stream"));
 }
 

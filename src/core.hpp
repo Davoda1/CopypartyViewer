@@ -7,16 +7,17 @@
 #include <vector>
 
 namespace cpv {
-inline constexpr const char* version = "1.0.0";
+inline constexpr const char* version = "2.0.0";
 struct Geometry { int x = -1, y = -1, w = 1100, h = 700; bool maximized = false; };
 struct Config {
     std::string server, username, password, last_path = "/";
     bool modern_ui = true;
     bool show_directory_sizes = true;
+    std::string code_theme = "default";
     // Only explicit Settings Save promotes credentials to persistent values.
     bool credentials_saved = false;
     Geometry main_window;
-    Geometry settings_window{-1, -1, 560, 360, false};
+    Geometry settings_window{-1, -1, 560, 570, false};
 };
 std::filesystem::path settings_path();
 Config default_config();
@@ -31,6 +32,18 @@ std::string normalize_server(const std::string&);
 std::string resolve_path(const std::string& input, const std::string& current,
                          const std::string& server);
 std::string make_url(const std::string& server, const std::string& path);
+struct DocumentLink {
+    enum class Kind { Anchor, ServerPath, Browser };
+    Kind kind;
+    std::string target, anchor;
+};
+// Resolve only after an explicit document-link click. ServerPath targets are
+// decoded paths within the configured server base. Browser targets are validated
+// HTTP(S) URLs and never incorporate the application's saved credentials.
+// The optional anchor is decoded and excludes its leading '#'.
+DocumentLink resolve_document_link(const std::string& input,
+                                   const std::string& current_file_path,
+                                   const std::string& server);
 std::string parent_path(const std::string& path);
 std::string basename(const std::string& path);
 std::string human_size(std::uint64_t);
@@ -54,6 +67,35 @@ struct Entry {
     // mapped only to a verified JSON entry name.
     std::string terminal_line_ansi;
 };
+// Column 0: name, 1: size, 2: modified. Directories always precede files;
+// unknown sizes always follow known sizes within their directory/file group.
+// Keeping size availability as a separate key avoids the comparison cycle that
+// results from falling back to names whenever either operand has no size.
+inline bool entry_less(const Entry& a, const Entry& b, int column,
+                       bool descending, bool show_directory_sizes = true) {
+    if (a.directory != b.directory) return a.directory;
+    int cmp = 0;
+    if (column == 1 && (!a.directory || show_directory_sizes)) {
+        if (a.size_known != b.size_known) return a.size_known;
+        if (a.size_known && a.size != b.size) cmp = a.size < b.size ? -1 : 1;
+    } else if (column == 2 && a.modified != b.modified) {
+        cmp = a.modified < b.modified ? -1 : 1;
+    }
+    if (cmp == 0) {
+        const auto length = a.name.size() < b.name.size() ? a.name.size() : b.name.size();
+        for (std::size_t i = 0; i < length; ++i) {
+            auto ac = static_cast<unsigned char>(a.name[i]);
+            auto bc = static_cast<unsigned char>(b.name[i]);
+            if (ac >= 'A' && ac <= 'Z') ac = static_cast<unsigned char>(ac - 'A' + 'a');
+            if (bc >= 'A' && bc <= 'Z') bc = static_cast<unsigned char>(bc - 'A' + 'a');
+            if (ac != bc) { cmp = ac < bc ? -1 : 1; break; }
+        }
+        if (cmp == 0 && a.name.size() != b.name.size()) cmp = a.name.size() < b.name.size() ? -1 : 1;
+        if (cmp == 0 && a.name != b.name) cmp = a.name < b.name ? -1 : 1;
+        if (cmp == 0 && a.path != b.path) cmp = a.path < b.path ? -1 : 1;
+    }
+    return descending ? cmp > 0 : cmp < 0;
+}
 struct Listing {
     std::vector<Entry> entries;
     std::string path, account, server_info, header_ansi;

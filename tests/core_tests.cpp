@@ -1,6 +1,7 @@
 // Copyright (C) 2026 davoda1 — SPDX-License-Identifier: MIT
 #include "core.hpp"
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -103,14 +104,53 @@ void paths() {
     rejects([&]{resolve_path("bad\\name", "/", server);}, "backslash rejected");
     rejects([&]{resolve_path("a?move=/b", "/", server);}, "query injection rejected");
 }
+void document_links() {
+    const std::string server="https://example.test/base/",current="/docs/readme.md";
+    using Kind=DocumentLink::Kind;
+    auto link=resolve_document_link("guide.md",current,server);
+    require(link.kind==Kind::ServerPath&&link.target=="/docs/guide.md"&&link.anchor.empty(), "relative Markdown link resolves beside its document");
+    link=resolve_document_link("../index.md#overview",current,server);
+    require(link.kind==Kind::ServerPath&&link.target=="/index.md"&&link.anchor=="overview", "parent document links preserve a separate fragment");
+    link=resolve_document_link("/top.md",current,server);
+    require(link.kind==Kind::ServerPath&&link.target=="/top.md", "absolute viewer paths stay within the configured server base");
+    link=resolve_document_link("file%23name%3F.md#section%20one",current,server);
+    require(link.kind==Kind::ServerPath&&link.target=="/docs/file#name?.md"&&link.anchor=="section one", "encoded filename punctuation and anchors decode separately");
+    link=resolve_document_link("#local-anchor",current,server);
+    require(link.kind==Kind::Anchor&&link.target.empty()&&link.anchor=="local-anchor", "fragment-only link stays in the current preview");
+    link=resolve_document_link("#",current,server);
+    require(link.kind==Kind::Anchor&&link.target.empty()&&link.anchor.empty(), "empty fragment goes to the current document top");
+    link=resolve_document_link("",current,server);
+    require(link.kind==Kind::Anchor&&link.target.empty(), "empty href stays in the current document");
+    link=resolve_document_link("https://EXAMPLE.test:443/base/docs/next.md#part",current,server);
+    require(link.kind==Kind::ServerPath&&link.target=="/docs/next.md"&&link.anchor=="part", "matching origin and base stay in the viewer");
+    const std::string external="https://other.test/a%20b?q=x%23y#part";
+    link=resolve_document_link(external,current,server);
+    require(link.kind==Kind::Browser&&link.target==external&&link.anchor=="part", "external HTTPS link preserves its validated query and fragment");
+    link=resolve_document_link("http://other.test/",current,server);
+    require(link.kind==Kind::Browser&&link.target=="http://other.test/", "explicit HTTP link uses the browser");
+    const std::string same_query="https://example.test/base/docs/readme.md?view=raw#part";
+    link=resolve_document_link(same_query,current,server);
+    require(link.kind==Kind::Browser&&link.target==same_query, "same-server query links use browser login instead of viewer credentials");
+    link=resolve_document_link("next.md?view=raw#part",current,server);
+    require(link.kind==Kind::Browser&&link.target=="https://example.test/base/docs/next.md?view=raw#part", "relative query URL is constructed from the validated server path");
+    link=resolve_document_link("?view=raw#part",current,server);
+    require(link.kind==Kind::Browser&&link.target==same_query, "query-only URL refers to the current file");
+    link=resolve_document_link("https://example.test/outside.md",current,server);
+    require(link.kind==Kind::Browser&&link.target=="https://example.test/outside.md", "same-origin links outside the configured base cannot become authenticated viewer requests");
+    for(const char* unsafe:{"javascript:alert(1)","data:text/html,hello","file:///etc/passwd","mailto:a@example.test","ftp://example.test/file","C:/Windows/test.txt","//evil.test/file","https://u:p@example.test/base/file.md","https://example.test/a\\b","relative\\file.md","bad\nname.md","https://example.test/?a=\r\nb","https://example.test/%00bad","#bad%0Aanchor","../../outside.md","../../outside.md?view=raw","http:/example.test/file"})
+        rejects([&]{resolve_document_link(unsafe,current,server);}, "unsafe Markdown destination rejected");
+    rejects([&]{resolve_document_link(std::string("bad\0name",8),current,server);}, "embedded NUL in Markdown destination rejected");
+}
 void configuration(const std::filesystem::path& dir) {
     Config c = default_config();
     require(c.modern_ui && c.show_directory_sizes, "default view is Modern with folder sizes");
+    require(c.code_theme == "default", "code highlighting starts with the Default theme");
     require(!c.credentials_saved, "compiled credentials start as unsaved");
     c.server = "https://example.test/base/";
     c.username = "test-user-λ"; c.password = "test-pw-文-!:$";
     c.credentials_saved = true;
     c.modern_ui = false; c.show_directory_sizes = false;
+    c.code_theme = "nord";
     c.last_path = "/café/file.txt";
     c.main_window = {-1500, 25, 1320, 810, true};
     c.settings_window = {45, 60, 650, 420, false};
@@ -126,6 +166,7 @@ void configuration(const std::filesystem::path& dir) {
     require(restored.server == c.server && restored.last_path == c.last_path, "server/path round trip");
     require(restored.username == c.username && restored.password == c.password, "both credentials round trip");
     require(restored.credentials_saved && !restored.modern_ui && !restored.show_directory_sizes, "saved credentials and view preferences round trip");
+    require(restored.code_theme == "nord" && nlohmann::json::parse(text)["appearance"]["code_theme"] == "nord", "code theme round trips in appearance without changing account settings");
     require(restored.main_window.x == -1500 && restored.main_window.w == 1320 && restored.main_window.maximized, "main geometry round trip");
     require(restored.settings_window.y == 60 && restored.settings_window.h == 420, "settings geometry round trip");
     auto copy = dir / "portable-copy.json";
@@ -133,14 +174,19 @@ void configuration(const std::filesystem::path& dir) {
     auto portable = load_config(copy, error);
     require(portable.password == c.password && portable.username == c.username, "copied JSON remains portable");
     auto legacy = nlohmann::json::parse(text);
-    legacy.erase("modern_ui"); legacy.erase("show_directory_sizes"); legacy["credentials"].erase("saved");
+    legacy.erase("modern_ui"); legacy.erase("show_directory_sizes"); legacy.erase("appearance"); legacy["credentials"].erase("saved");
     write(copy, legacy.dump());
     portable = load_config(copy, error);
     require(portable.modern_ui && portable.show_directory_sizes, "older JSON gains view defaults");
+    require(portable.code_theme == "default", "1.0.0 settings gain the Default code theme");
     require(portable.credentials_saved && portable.username == c.username && portable.password == c.password, "legacy explicit credentials remain saved");
     legacy["modern_ui"] = "false"; legacy["show_directory_sizes"] = 0;
     write(copy, legacy.dump()); portable = load_config(copy, error);
     require(portable.modern_ui && portable.show_directory_sizes, "malformed preference types do not silently change defaults");
+    for (const auto& malformed : {nlohmann::json("nord"), nlohmann::json{{"code_theme", "unknown-theme"}}, nlohmann::json{{"code_theme", 2}}}) {
+        legacy["appearance"] = malformed; write(copy, legacy.dump()); portable = load_config(copy, error);
+        require(portable.code_theme == "default" && portable.password == c.password && error.empty(), "malformed or unknown code theme falls back without disturbing saved credentials");
+    }
     Config session = default_config();
     session.username = "session-only-user"; session.password = "session-only-value";
     require(save_config(copy, session, error), "ordinary session state can be saved");
@@ -194,6 +240,53 @@ void listings() {
     rejects([]{parse_listing("{\"files\":[]}", "/");}, "nonlisting JSON rejected");
     require(human_size(1024) == "1.0 KiB", "human-readable size");
     require(format_time(0) == "—", "missing timestamp marked");
+}
+void sorting() {
+    auto entry=[](std::string name, bool known, std::uint64_t size, bool directory=false, std::int64_t modified=0) {
+        Entry e; e.name=std::move(name); e.path="/"+e.name+(directory?"/":"");
+        e.size_known=known; e.size=size; e.directory=directory; e.modified=modified;
+        return e;
+    };
+    const std::vector<Entry> cycle={entry("a",true,100),entry("b",false,0),entry("c",true,1)};
+    auto ordered=[&](std::vector<Entry> items,int column,bool descending,bool show_sizes=true) {
+        std::stable_sort(items.begin(),items.end(),[&](const Entry& a,const Entry& b){return entry_less(a,b,column,descending,show_sizes);});
+        std::string names;for(const auto& e:items){if(!names.empty())names+=",";names+=e.name;}
+        return names;
+    };
+    require(ordered(cycle,1,false)=="c,a,b", "Size ascending fixes the known/unknown comparison cycle");
+    require(ordered(cycle,1,true)=="a,c,b", "Size descending leaves unknown sizes last");
+    std::vector<Entry> sample={
+        entry("a",true,100),entry("b",false,0),entry("c",true,1),
+        entry("zero",true,0),entry("max",true,std::numeric_limits<std::uint64_t>::max()),
+        entry("B",false,std::numeric_limits<std::uint64_t>::max()),
+        entry("same",true,1),entry("Same",true,1),entry("same",true,1),
+        entry("folder-a",true,100,true,20),entry("folder-b",false,0,true,30),entry("folder-c",true,1,true,10)
+    };
+    sample[8].path="/other/same";
+    const std::vector<Entry> folders(sample.end()-3,sample.end());
+    require(ordered(folders,1,false)=="folder-c,folder-a,folder-b", "known folder sizes sort numerically before unknown sizes");
+    require(ordered(folders,1,true)=="folder-a,folder-c,folder-b", "unknown folder sizes stay last in descending order");
+    require(ordered(folders,1,false,false)=="folder-a,folder-b,folder-c", "hidden folder sizes use names consistently");
+    require(ordered(folders,1,true,false)=="folder-c,folder-b,folder-a", "hidden folder size descending reverses name order");
+    require(ordered({sample[3],sample[4],sample[1]},1,false)=="zero,max,b", "zero and maximum unsigned sizes are known and compare without overflow");
+    require(ordered({sample[6],sample[7]},1,false)=="Same,same", "equal sizes and folded names use deterministic case-sensitive name ties");
+    require(entry_less(sample[8],sample[6],1,false) && !entry_less(sample[6],sample[8],1,false), "identical display names use the verified path as final tie breaker");
+    for (int column=0;column<3;++column) for(bool descending:{false,true}) for(bool show_sizes:{false,true}) {
+        auto less=[&](const Entry& a,const Entry& b){return entry_less(a,b,column,descending,show_sizes);};
+        bool irreflexive=true,asymmetric=true,transitive=true,equivalence=true,folders_first=true;
+        for(const auto& a:sample) {
+            irreflexive=irreflexive&&!less(a,a);
+            for(const auto& b:sample) {
+                asymmetric=asymmetric&&!(less(a,b)&&less(b,a));
+                if(a.directory&&!b.directory)folders_first=folders_first&&less(a,b)&&!less(b,a);
+                for(const auto& c:sample) {
+                    if(less(a,b)&&less(b,c))transitive=transitive&&less(a,c);
+                    if(!less(a,b)&&!less(b,a)&&!less(b,c)&&!less(c,b))equivalence=equivalence&&!less(a,c)&&!less(c,a);
+                }
+            }
+        }
+        require(irreflexive&&asymmetric&&transitive&&equivalence&&folders_first, "all columns/directions/folder-size modes satisfy strict weak ordering and keep folders first");
+    }
 }
 void terminal_listings() {
     const char* data = R"({"acct":"fixture","perms":["read","get"],"srvinf":"example</span> // <span>disk &amp; data","dirs":[{"href":"large/","sz":3221225472,"ts":1700000000,"tags":{".files":6}},{"href":"empty/","sz":0,"ts":1700000000},{"href":"unknown/","ts":1700000000}],"files":[{"href":"caf%C3%A9%20file.txt","sz":1024,"ts":1700000000},{"href":"negative.bin","sz":-1},{"href":"bad-size.bin","sz":"123"}]})";
@@ -312,7 +405,7 @@ int main(int argc, char** argv) {
             else throw std::runtime_error("Unknown or incomplete core-test argument: " + arg);
         }
         TempDirectory temp;
-        paths(); configuration(temp.path); listings(); terminal_listings();
+        paths(); document_links(); configuration(temp.path); listings(); sorting(); terminal_listings();
         if (check_public_defaults) public_defaults(temp.path);
         if (!fixture.empty()) http_fixture(fixture, temp.path);
         std::cout << "PASS: " << checks << " core checks\n";

@@ -51,6 +51,8 @@ int main(int argc,char** argv){
   auto utf8=prepare_styled_text(bytes("\xef\xbb\xbfGr\xc3\xbc\xc3\x9f"));check(utf8.text=="Gr\xc3\xbc\xc3\x9f"&&utf8.text.size()==utf8.styles.size(),"UTF8 BOM removal and style alignment");
   auto oversize=std::vector<unsigned char>(8u*1024u*1024u+1,'x');auto truncated=prepare_text(oversize);check(truncated.find("Preview truncated at 8 MiB")!=std::string::npos,"text preview truncation notice");
   check(text_supported("a.json","application/json",bytes("{\"x\": 1}")),"JSON text");check(text_supported("unknown","application/octet-stream",bytes("plain text\n")),"unknown UTF8 text");check(!text_supported("a.txt","text/plain",{'a',0,'b'}),"binary NUL rejection");
+  check(text_supported("unicode.txt","text/plain",{0x16,0x4e,0x4c,0x75,0x3d,0xd8,0,0xde},true),"ambiguous BOM-less Unicode text keeps the encoding selector available");
+  check(!text_supported("a.exe","application/octet-stream",{'a',0,'b'},true),"encoding override does not admit unknown binary files");
   // Workers decode independently; no FLTK initialization or display server needed.
   std::atomic<bool> concurrent_ok{true};std::vector<std::thread> workers;
   for(unsigned t=0;t<8;++t) workers.emplace_back([&]{try{for(unsigned n=0;n<12;++n){auto image=decode_image(read(dir/(n%2?"shapes.svg":"rgba.png")),n%2?"a.svg":"a.png","");if(image.width!=32||image.pixels[0]!=230)concurrent_ok=false;}}catch(...){concurrent_ok=false;}});

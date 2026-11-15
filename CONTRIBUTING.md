@@ -38,3 +38,16 @@ Maintain these project constraints:
 Do not commit build output, local profiles, private server settings, credentials, tokens or generated diagnostic logs. Keep contributions compatible with the project's [MIT License](LICENSE), and identify the license and source of any proposed third-party material.
 
 Hosted checks are reported through [GitHub Actions](https://github.com/Davoda1/CopypartyViewer/actions). Refer to the checks for the exact pull-request commit; a previous passing run does not validate a later change.
+
+## Maintainer preflight for protected master
+
+The repository keeps `master` as its only branch. CI also accepts `preflight-*` tag pushes so maintainers can test a candidate commit before advancing protected `master`, under the existing required-check rules.
+
+1. Complete local verification and commit the reviewed changes.
+2. Create a unique tag such as `preflight-<version>-<short-sha>` at that exact commit, then push only that tag with the maintainer's normal authenticated Git access.
+3. Wait for all three real GitHub Actions jobs—`Repository`, `Linux` and `Windows`—to succeed for the candidate SHA. Preflight runs include all native suites, package verification and CodeQL.
+4. Confirm that `master` has not advanced and is an ancestor of the tested commit, then fast-forward `master` to that same SHA. If the commit changes, repeat preflight with a new tag.
+5. Wait for the resulting master-push CI run and master CodeQL analysis to succeed.
+6. Use that master-push run with the existing release publication gate. A preflight-tag run does not authorize publication.
+
+Dependency caches are saved only by trusted master pushes. Release tags remain outside the automatic CI tag filter, and publishing remains an explicit, verified workflow dispatch. GitHub documents how [push events select workflows from the pushed commit or tag](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push).

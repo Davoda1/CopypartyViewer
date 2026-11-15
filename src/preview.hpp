@@ -10,7 +10,8 @@ bool image_supported(const std::string& filename, const std::string& content_typ
 ImageData decode_image(const std::vector<unsigned char>& bytes,
                        const std::string& filename, const std::string& content_type);
 bool text_supported(const std::string& filename, const std::string& content_type,
-                    const std::vector<unsigned char>& bytes);
+                    const std::vector<unsigned char>& bytes,
+                    bool allow_encoding_override = false);
 // Remove terminal control sequences, normalize newlines, replace invalid UTF-8 safely.
 std::string prepare_text(const std::vector<unsigned char>& bytes);
 // Byte-for-byte FLTK style map: A default, B bold; C..J = black, red,

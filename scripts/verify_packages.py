@@ -13,14 +13,18 @@ import tarfile
 import zipfile
 
 
-VERSION = "1.0.0"
+VERSION = "2.0.0"
 NAMES = {
-    "windows": "Copyparty-Viewer-1.0.0-Windows-x64.zip",
-    "deb": "copyparty-viewer_1.0.0_amd64.deb",
-    "linux": "Copyparty-Viewer-1.0.0-Linux-amd64.tar.gz",
+    "windows": f"Copyparty-Viewer-{VERSION}-Windows-x64.zip",
+    "deb": f"copyparty-viewer_{VERSION}_amd64.deb",
+    "linux": f"Copyparty-Viewer-{VERSION}-Linux-amd64.tar.gz",
 }
 ROOT_DOCS = ("README.md", "BUILDING.md", "CHANGELOG.md", "CONTRIBUTING.md",
              "SECURITY.md", "LICENSE", "THIRD_PARTY_NOTICES.md")
+REQUIRED_NOTICE_HASHES = {
+    "MD4C-LICENSE.md": "d30937367d5413e7eaa218b1640b8946ff76fd34d97152f6979fd96169d5d0fc",
+    "Unicode-LICENSE.txt": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96",
+}
 MAX_FILE = 160 * 1024 * 1024
 MAX_TOTAL = 512 * 1024 * 1024
 MAX_MEMBERS = 512
@@ -234,7 +238,15 @@ def elf_imports(data):
     return imports
 
 
+def verify_notices(root):
+    for name, expected in REQUIRED_NOTICE_HASHES.items():
+        path = root / "packaging/third-party-licenses" / name
+        require(path.is_file() and not path.is_symlink() and digest(path.read_bytes()) == expected,
+                "A required third-party notice is missing or changed: " + name)
+
+
 def documentation(root):
+    verify_notices(root)
     expected = {name: (root / name).read_bytes() for name in ROOT_DOCS}
     for local, remote in (("docs", "docs"), ("packaging/third-party-licenses", "third-party-licenses")):
         for file in sorted((root / local).rglob("*")):
@@ -293,7 +305,8 @@ def verify_packages(root, directory, platforms=("windows", "deb", "linux")):
                 expected = {"usr/share/doc/copyparty-viewer/" + n: b for n, b in docs.items()}
                 expected.update({"usr/" + n: b for n, b in resources.items()})
                 expected["usr/share/doc/copyparty-viewer/copyright"] = (
-                    b"Copyparty Viewer 1.0.0\nCopyright (C) 2026 davoda1\nLicense: MIT\n\n"
+                    ("Copyparty Viewer " + VERSION + "\n").encode("utf-8") +
+                    b"Copyright (C) 2026 davoda1\nLicense: MIT\n\n"
                     b"Third-party components retain their own licenses; see THIRD_PARTY_NOTICES.md\n"
                     b"and the accompanying third-party-licenses directory.\n\n" + (root / "LICENSE").read_bytes())
                 executable = "usr/bin/copyparty-viewer"

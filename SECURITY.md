@@ -13,7 +13,8 @@ Please check whether the issue is reproducible with the latest release and ident
 - Official releases start at `https://a.ocv.me/pub/` with no embedded username or password.
 - The client has no upload, deletion, rename or server-editing controls. Server permissions still determine what an account may read and download.
 - HTTPS certificates are checked using Schannel on Windows and OpenSSL with the system CA bundle on Linux. URL and redirect handling enforce the configured server boundary.
-- Listings, previews and decoded image dimensions have explicit limits. Text and image previews do not execute HTML or SVG scripts.
+- Listings, previews and decoded image dimensions have explicit limits. Markdown raw HTML is escaped, RTF embedded resources and field instructions are ignored, and CSV cells remain literal text. The native previews do not execute HTML/SVG scripts, code blocks or spreadsheet formulas.
+- Document links activate only after a click. Links within the configured server use its normal path checks; external HTTP/HTTPS and query links open in the browser without attaching application credentials.
 - Downloads use a temporary file and replace the selected destination only after successful completion. A cancelled or failed transfer preserves an existing destination.
 - Credentials entered in the main window apply to the current session. Only an explicit Settings Save changes the persistent account.
 

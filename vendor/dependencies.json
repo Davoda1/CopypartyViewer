@@ -79,5 +79,20 @@
       "nanosvg/nanosvg.h": "b9cc72b1e19e86356fb02892e04b66918d94d7390b6f56df504284bc109a6c11",
       "nanosvg/nanosvgrast.h": "7b877b2ac8e210330f12f6a92bb0f5e5f3891a785bdc32f071330924853ed058"
     }
+  },
+  {
+    "name": "MD4C",
+    "version": "0.5.2",
+    "license": "MIT",
+    "url": "https://github.com/mity/md4c/tree/release-0.5.2",
+    "files": {
+      "md4c/LICENSE.md": "d30937367d5413e7eaa218b1640b8946ff76fd34d97152f6979fd96169d5d0fc",
+      "md4c/README.md": "c616ba60043fa0afc723f3c98b4c79037ce1cd4ef7c4edc0a5ee44f0d87823e4",
+      "md4c/SHA256SUMS": "b7c9cab1423371deebee1502af0a8b98c4d8eed02d6a5ca63e1869ac43737e55",
+      "md4c/entity.c": "69d9362cd3b61261c3ed9d9f226ae1c66a3209f9db03805b1d114841ee3a6c1f",
+      "md4c/entity.h": "7d021cb683c0e7643df6ce0db51d75f8cbc313be9ec754cb4dc18c40ebaa400b",
+      "md4c/md4c.c": "52e39843b96b64d0281bf795128bcc88c9c4dc52d7436737e9f4306648dc4590",
+      "md4c/md4c.h": "4efd19bf7ec270691d5b4189f496886e421768a814b5e817eb945aa85e859f18"
+    }
   }
 ]

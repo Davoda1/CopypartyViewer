@@ -3,6 +3,10 @@
 #include "ui.hpp"
 #include "core.hpp"
 #include "preview.hpp"
+#include "document.hpp"
+#include "rtf.hpp"
+#include "csv.hpp"
+#include "text_encoding.hpp"
 #include "retro.hpp"
 #include "platform.hpp"
 #include "assets.hpp"
@@ -17,6 +21,8 @@
 #include <FL/Fl_Scrollbar.H>
 #include <FL/Fl_Text_Display.H>
 #include <FL/Fl_Text_Buffer.H>
+#include <FL/Fl_Help_View.H>
+#include <FL/Fl_Choice.H>
 #include <FL/Fl_Native_File_Chooser.H>
 #include <FL/Fl_PNG_Image.H>
 #include <FL/Fl_SVG_Image.H>
@@ -29,6 +35,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
@@ -52,6 +59,41 @@ Fl_Color accent = fl_rgb_color(35, 105, 168);
 Fl_Color muted = fl_rgb_color(100, 107, 115);
 Fl_Color surface = FL_WHITE;
 bool dark_mode = false;
+constexpr std::size_t formatted_render_limit = 512u * 1024u;
+constexpr std::size_t text_input_limit = 8u * 1024u * 1024u;
+const std::array<const char*,8> encoding_ids={"auto","utf8","utf16le","utf16be","utf32le","utf32be","cp1250","cp1252"};
+
+struct DecodedPreview { PreparedText source; std::string encoding; bool supported=false; };
+DecodedPreview decode_preview(const std::vector<unsigned char>& bytes,const std::string& name,
+        const std::string& content_type,const std::string& choice="auto") {
+    auto decoded=decode_text(bytes,choice,content_type);
+    std::vector<unsigned char> utf8(decoded.text.begin(),decoded.text.end());
+    DecodedPreview result;result.encoding=std::move(decoded.encoding);
+    result.supported=text_supported(name,content_type,utf8,true);
+    result.source=prepare_styled_text(utf8);
+    if(decoded.truncated&&result.source.text.find("[Preview truncated at 8 MiB.")==std::string::npos) {
+        const std::string note="\n\n[Preview truncated at 8 MiB. Download the file to read it in full.]\n";
+        result.source.text+=note;result.source.styles.append(note.size(),'A');
+    }
+    return result;
+}
+
+Fl_Color document_color(const std::string& hex) {
+    unsigned r=0,g=0,b=0;
+    if(hex.size()==7 && hex[0]=='#' && std::sscanf(hex.c_str()+1,"%2x%2x%2x",&r,&g,&b)==3)
+        return fl_rgb_color(static_cast<uchar>(r),static_cast<uchar>(g),static_cast<uchar>(b));
+    return FL_FOREGROUND_COLOR;
+}
+
+document::RenderedDocument make_markdown(const std::string& text,const std::string& theme,bool dark) {
+    return document::render_document(text,theme,dark,dark?"#e9ebee":"#1f252c",
+        dark?"#1e2023":"#ffffff",dark?"#6eb1ec":"#2369a8");
+}
+
+document::RenderedDocument make_csv(const std::string& text,bool dark) {
+    return document::render_csv(text,dark?"#e9ebee":"#1f252c",
+        dark?"#1e2023":"#ffffff",dark?"#626972":"#b9c0c8");
+}
 
 void no_focus_outline(Fl_Boxtype,int,int,int,int,Fl_Color,Fl_Color) {}
 
@@ -412,9 +454,13 @@ struct Job {
     std::thread worker;
     std::string error;
     bool cancelled=false, is_listing=false, is_image=false, is_text=false;
+    bool is_markdown=false, is_rtf=false, is_csv=false, renderable_document=false, dark=false;
     Listing listing;
     ImageData image;
-    std::string text, styles, detail;
+    std::string text, styles, detail, language, raw_rtf, text_encoding, content_type;
+    std::vector<unsigned char> raw_text;
+    std::size_t text_size=0;
+    document::RenderedDocument rendered_document;
     ~Job() { if(worker.joinable())worker.join(); }
 };
 
@@ -426,14 +472,16 @@ public:
     Fl_Input *path=nullptr, *username=nullptr, *filter=nullptr;
     Fl_Secret_Input* password=nullptr;
     Fl_Button *back=nullptr,*forward=nullptr,*up=nullptr,*refresh=nullptr,*fetch_button=nullptr,*settings_button=nullptr;
-    Fl_Button *save_button=nullptr,*browser_button=nullptr,*cancel_button=nullptr;
+    Fl_Button *save_button=nullptr,*browser_button=nullptr,*cancel_button=nullptr,*source_button=nullptr;
     Fl_Box *path_label=nullptr,*user_label=nullptr,*pass_label=nullptr,*filter_label=nullptr,*status=nullptr,*file_title=nullptr,*message=nullptr;
     FileTable* table=nullptr;
     RetroListing* retro=nullptr;
     ImageCanvas* image_canvas=nullptr;
     Fl_Text_Display* text_display=nullptr;
+    Fl_Help_View* document_view=nullptr;
     Fl_Text_Buffer text_buffer,style_buffer;
     std::array<Fl_Text_Display::Style_Table_Entry,18> text_styles{};
+    std::array<Fl_Text_Display::Style_Table_Entry,11> code_styles{};
     ProgressIndicator* spinner=nullptr;
     TransferBar* transfer_bar=nullptr;
     std::unique_ptr<Fl_PNG_Image> app_icon;
@@ -444,12 +492,22 @@ public:
     Fl_Box *settings_error=nullptr,*settings_note=nullptr;
     Fl_Button *settings_save=nullptr,*settings_cancel=nullptr;
     AnimatedToggle *settings_modern=nullptr,*settings_sizes=nullptr;
+    Fl_Choice* settings_code_theme=nullptr;
+    Fl_Choice* encoding_choice=nullptr;
     std::vector<std::shared_ptr<Job>> jobs;
     std::shared_ptr<Job> pending_fetch;
     std::vector<Location> history;
     int history_index=-1;
     unsigned generation=0;
     bool closing=false, file_view=false, directory_view=false;
+    bool preview_text_available=false, preview_rtf=false, preview_csv=false, preview_markdown=false, preview_renderable=false, source_mode=false;
+    std::string preview_language, preview_text, preview_styles, preview_raw_rtf, preview_encoding, preview_content_type, queued_link, pending_anchor;
+    std::vector<unsigned char> preview_raw_text;
+    std::size_t preview_size=0;
+    int preview_encoding_index=0;
+    document::RenderedDocument preview_document;
+    std::string preview_document_theme;
+    bool preview_document_dark=false;
     Listing directory;
     std::string current_path="/", idle_status="Ready", startup_warning;
     int tick_count=0;
@@ -486,9 +544,22 @@ public:
         retro=new RetroListing(12,94,856,540);
         file_title=new Fl_Box(24,98,500,34); file_title->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE); file_title->labelfont(FL_HELVETICA_BOLD);
         save_button=new Fl_Button(630,100,100,28,"Save As…"); browser_button=new Fl_Button(738,100,118,28,"Open in browser");
+        source_button=new Fl_Button(534,100,88,28,"Source");
+        source_button->tooltip("Switch between the rendered document and its source text");
+        encoding_choice=new Fl_Choice(366,100,160,28);
+        encoding_choice->add("Auto encoding|UTF-8|UTF-16 LE|UTF-16 BE|UTF-32 LE|UTF-32 BE|CP1250|CP1252");
+        encoding_choice->value(0);encoding_choice->textsize(13);
+        encoding_choice->tooltip("Text encoding. Auto checks Unicode and the server's charset, then uses CP1250. Select CP1252 when needed.");
         save_button->tooltip("Download this file · Ctrl+S"); browser_button->tooltip("Open the current server URL in your default browser");
         text_display=new Fl_Text_Display(12,142,856,492); text_display->buffer(text_buffer); text_display->textfont(FL_COURIER); text_display->textsize(14); text_display->box(FL_BORDER_BOX);
         text_display->highlight_data(&style_buffer,text_styles.data(),int(text_styles.size()),0,nullptr,nullptr);
+        document_view=new Fl_Help_View(12,142,856,492);document_view->box(FL_BORDER_BOX);document_view->textsize(15);
+        document_view->user_data(this);
+        // Generated links are opaque indices. Never let FLTK load a URL or a
+        // local file directly, and defer navigation until its event returns.
+        document_view->link([](Fl_Widget*w,const char* target)->const char*{
+            static_cast<App*>(w->user_data())->queue_document_link(target?target:"");return nullptr;
+        });
         image_canvas=new ImageCanvas(12,142,856,492);
         message=new Fl_Box(32,150,816,450); message->align(FL_ALIGN_CENTER|FL_ALIGN_INSIDE|FL_ALIGN_WRAP); message->labelsize(15);
         spinner=new ProgressIndicator(10,650,26,28); status=new Fl_Box(42,650,560,28); status->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE); status->labelsize(13);
@@ -496,7 +567,7 @@ public:
         window->end(); window->resizable(table);
         for(Fl_Widget* w : std::vector<Fl_Widget*>{path_label,user_label,pass_label,filter_label}) { w->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE); w->labelsize(13); }
         for(Fl_Input* i : std::vector<Fl_Input*>{path,username,password,filter}) {i->textsize(14); i->labelsize(13);}
-        for(Fl_Widget* w : std::vector<Fl_Widget*>{back,forward,up,refresh,fetch_button,save_button,browser_button,cancel_button})w->labelsize(13);
+        for(Fl_Widget* w : std::vector<Fl_Widget*>{back,forward,up,refresh,fetch_button,save_button,browser_button,cancel_button,source_button})w->labelsize(13);
         path->when(FL_WHEN_ENTER_KEY_ALWAYS); username->when(FL_WHEN_ENTER_KEY_ALWAYS); password->when(FL_WHEN_ENTER_KEY_ALWAYS);
         auto fetch_cb=[](Fl_Widget*,void* v){static_cast<App*>(v)->fetch_from_path();};
         path->callback(fetch_cb,this); username->callback(fetch_cb,this); password->callback(fetch_cb,this); fetch_button->callback(fetch_cb,this);
@@ -507,6 +578,8 @@ public:
         settings_button->callback([](Fl_Widget*,void* v){static_cast<App*>(v)->open_settings();},this);
         save_button->callback([](Fl_Widget*,void* v){static_cast<App*>(v)->save_as();},this);
         browser_button->callback([](Fl_Widget*,void* v){static_cast<App*>(v)->open_browser();},this);
+        source_button->callback([](Fl_Widget*,void*v){auto*a=static_cast<App*>(v);a->source_mode=!a->source_mode;a->show_text_preview();},this);
+        encoding_choice->callback([](Fl_Widget*,void*v){static_cast<App*>(v)->change_encoding();},this);
         cancel_button->callback([](Fl_Widget*,void* v){static_cast<App*>(v)->cancel_current();},this);
         filter->when(FL_WHEN_CHANGED); filter->callback([](Fl_Widget*,void* v){static_cast<App*>(v)->filter_table();},this);
         window->callback([](Fl_Widget*,void* v){static_cast<App*>(v)->close();},this);
@@ -517,6 +590,7 @@ public:
     }
     ~App() {
         Fl::remove_timeout(timer_cb,this);
+        Fl::remove_timeout(document_link_cb,this);
         for(auto&j:jobs)j->progress.cancel=true;
         for(auto&j:jobs)if(j->worker.joinable())j->worker.join();
         // Widgets referencing images/buffers must be destroyed before their owners.
@@ -529,6 +603,11 @@ public:
         text_styles[0]={FL_FOREGROUND_COLOR,FL_COURIER,14,0,0}; text_styles[1]={FL_FOREGROUND_COLOR,FL_COURIER_BOLD,14,0,0};
         for(int i=0;i<8;++i){text_styles[std::size_t(i+2)]={colors[std::size_t(i)],FL_COURIER,14,0,0};text_styles[std::size_t(i+10)]={colors[std::size_t(i)],FL_COURIER_BOLD,14,0,0};}
         status->labelcolor(muted); filter_label->labelcolor(muted); text_display->color(surface); text_display->textcolor(FL_FOREGROUND_COLOR); text_display->cursor_color(accent);
+        document_view->color(surface);document_view->textcolor(FL_FOREGROUND_COLOR);
+        const auto p=document::palette(config.code_theme,dark_mode);
+        const std::array<std::string,11> tokens={p.foreground,p.comment,p.keyword,p.string,p.number,p.title,p.type,p.attribute,p.variable,p.meta,p.op};
+        for(std::size_t i=0;i<tokens.size();++i)code_styles[i]={document_color(tokens[i]),i==1?FL_COURIER_ITALIC:FL_COURIER,14,0,0};
+        if(preview_text_available)show_text_preview();
         table->color(surface);retro->palette(dark_mode);
         apply_titlebar_theme(*window,dark_mode);window->redraw();
         if(settings){apply_titlebar_theme(*settings,dark_mode);settings_note->labelcolor(muted);settings->redraw();}
@@ -540,16 +619,117 @@ public:
         user_label->resize(W-480,12,37,30);username->resize(W-441,12,114,30);
         pass_label->resize(W-316,12,65,30);password->resize(W-249,12,143,30);fetch_button->resize(W-94,12,82,30);
         filter_label->resize(W-393,54,77,28);filter->resize(W-315,54,255,28);settings_button->resize(W-48,51,36,34);
-        table->resize(12,94,W-24,H-144);retro->resize(12,94,W-24,H-144);file_title->resize(24,98,W-298,34);
+        table->resize(12,94,W-24,H-144);retro->resize(12,94,W-24,H-144);layout_file_toolbar();
+        source_button->resize(W-346,100,88,28);
         save_button->resize(W-250,100,104,28);browser_button->resize(W-138,100,126,28);
-        text_display->resize(12,142,W-24,H-192);image_canvas->resize(12,142,W-24,H-192);message->resize(32,146,W-64,H-200);
+        text_display->resize(12,142,W-24,H-192);document_view->resize(12,142,W-24,H-192);image_canvas->resize(12,142,W-24,H-192);message->resize(32,146,W-64,H-200);
         spinner->resize(10,H-38,26,28);status->resize(42,H-38,W-340,28);transfer_bar->resize(W-286,H-38,166,28);cancel_button->resize(W-106,H-38,94,28);
         // Window managers may send the maximized size before the state event.
         // Debounce geometry in tick() so this never overwrites the normal size.
         geometry_changed=std::chrono::steady_clock::now();
         window->redraw();
     }
-    void hide_content() {table->hide();retro->hide();file_title->hide();save_button->hide();browser_button->hide();text_display->hide();image_canvas->hide();message->hide();}
+    void layout_file_toolbar() {
+        const bool encoding=preview_text_available&&!preview_rtf;
+        const int occupied=preview_renderable?398:298;
+        file_title->resize(24,98,window->w()-occupied-(encoding?168:0),34);
+        encoding_choice->resize(window->w()-(preview_renderable?514:418),100,160,28);
+    }
+    void hide_content() {table->hide();retro->hide();file_title->hide();save_button->hide();browser_button->hide();source_button->hide();encoding_choice->hide();text_display->hide();document_view->hide();image_canvas->hide();message->hide();}
+    std::string preview_format_name() const {return preview_rtf?"RTF":preview_csv?"CSV":"Markdown";}
+    void change_encoding() {
+        if(!preview_text_available||preview_rtf||closing)return;
+        const int index=encoding_choice->value();
+        if(index<0||index>=int(encoding_ids.size()))return;
+        try {
+            auto decoded=decode_preview(preview_raw_text,basename(current_path),preview_content_type,encoding_ids[std::size_t(index)]);
+            preview_text=std::move(decoded.source.text);preview_styles=std::move(decoded.source.styles);preview_encoding=std::move(decoded.encoding);
+            if(!preview_language.empty())preview_styles=document::syntax_styles(preview_text,preview_language);
+            const std::string prefix=human_size(preview_size)+" · "+preview_encoding+" · ";
+            idle_status=prefix+(preview_language.empty()?"Read-only text":preview_language+" · Read-only code");
+            preview_renderable=false;preview_document={};
+            if(preview_markdown||preview_csv) {
+                idle_status=prefix+preview_format_name();
+                if(preview_text.size()<=formatted_render_limit) {
+                    try {
+                        preview_document=preview_csv?make_csv(preview_text,dark_mode):make_markdown(preview_text,config.code_theme,dark_mode);
+                        preview_renderable=true;
+                    }catch(const std::exception&e){idle_status+=" source · "+std::string(e.what());}
+                }else idle_status+=" source · Rendered preview limit: 512 KiB";
+            }
+            preview_document_theme=config.code_theme;preview_document_dark=dark_mode;
+            text_buffer.text(preview_text.c_str());style_buffer.text(preview_styles.c_str());text_display->scroll(1,0);
+            document_view->value(preview_document.html.c_str());document_view->topline(0);document_view->leftline(0);
+            preview_encoding_index=index;
+            show_text_preview();status_text(idle_status);
+        }catch(const std::exception&e){
+            encoding_choice->value(preview_encoding_index);
+            idle_status=std::string("Could not decode text: ")+e.what();status_text(idle_status);
+        }
+    }
+    void show_text_preview() {
+        if(!preview_text_available)return;
+        const bool code=!preview_language.empty();
+        const auto p=document::palette(config.code_theme,dark_mode);
+        text_display->highlight_data(&style_buffer,code?code_styles.data():text_styles.data(),
+            code?int(code_styles.size()):int(text_styles.size()),0,nullptr,nullptr);
+        text_display->color(code?document_color(p.background):surface);
+        text_display->textcolor(code?document_color(p.foreground):FL_FOREGROUND_COLOR);
+        if(preview_renderable && (preview_document_theme!=config.code_theme || preview_document_dark!=dark_mode)) {
+            try {
+                const int top=document_view->topline(),left=document_view->leftline();
+                preview_document=preview_rtf?document::render_rtf(preview_raw_rtf,"#1f252c","#ffffff","#2369a8"):
+                    preview_csv?make_csv(preview_text,dark_mode):make_markdown(preview_text,config.code_theme,dark_mode);
+                preview_document_theme=config.code_theme;preview_document_dark=dark_mode;
+                document_view->value(preview_document.html.c_str());document_view->topline(top);document_view->leftline(left);
+            }catch(const std::exception&){
+                preview_renderable=false;source_mode=true;
+                idle_status=preview_format_name()+" source · Rendered preview unavailable";status_text(idle_status);
+            }
+        }
+        if(preview_renderable) {
+            source_button->copy_label(source_mode?"Rendered":"Source");source_button->show();
+        }else source_button->hide();
+        if(preview_rtf)encoding_choice->hide();else encoding_choice->show();
+        if(preview_renderable&&!source_mode){text_display->hide();document_view->show();}
+        else{document_view->hide();text_display->show();}
+        layout_file_toolbar();
+        text_display->redraw();document_view->redraw();window->redraw();
+    }
+    void jump_to_document_anchor(const std::string& anchor) {
+        if(anchor.empty()){document_view->topline(0);return;}
+        const auto target=preview_document.anchors.find(anchor);
+        if(target!=preview_document.anchors.end())document_view->topline(target->second.c_str());
+        else status_text("Heading not found in this document");
+    }
+    static void document_link_cb(void*v) {
+        auto*a=static_cast<App*>(v);
+        if(a->closing)return;
+        auto target=std::move(a->queued_link);a->queued_link.clear();
+        try {
+            const auto link=resolve_document_link(target,a->current_path,a->config.server);
+            if(link.kind==DocumentLink::Kind::Anchor) {
+                a->jump_to_document_anchor(link.anchor);
+            }else if(link.kind==DocumentLink::Kind::ServerPath) {
+                a->navigate(link.target,!link.target.empty()&&link.target.back()=='/'?FetchKind::Listing:FetchKind::Auto);
+                a->pending_anchor=link.anchor;
+            }else {
+                char error[1024]={};
+                if(!fl_open_uri(link.target.c_str(),error,sizeof(error)))a->status_text(std::string("Could not open browser: ")+error);
+            }
+        }catch(const std::exception&e){a->status_text(safe_error(e.what(),a->request_config()));}
+    }
+    void queue_document_link(const std::string& token) {
+        if(closing||token.compare(0,4,"cpv:")!=0||token.size()<5||token.size()>24)return;
+        std::size_t index=0;
+        for(std::size_t i=4;i<token.size();++i) {
+            if(token[i]<'0'||token[i]>'9'||index>preview_document.links.size())return;
+            index=index*10+std::size_t(token[i]-'0');
+        }
+        if(index>=preview_document.links.size())return;
+        queued_link=preview_document.links[index];
+        Fl::remove_timeout(document_link_cb,this);Fl::add_timeout(0,document_link_cb,this);
+    }
     void show_message(const std::string& value,bool file=false) {
         hide_content(); message->copy_label(value.c_str()); message->show();
         if(file){file_title->show();save_button->show();browser_button->show();}
@@ -616,9 +796,13 @@ public:
         ++generation;for(auto&j:jobs)if(j->type==Job::Type::Fetch)j->progress.cancel=true;
         current_path=loc.path;path->value(display_path(loc.path).c_str());config.last_path=loc.path;
         filter->value(loc.filter.c_str()); directory_view=false; file_view=false;update_navigation();
-        image_canvas->clear();text_buffer.text("");style_buffer.text("");
+        Fl::remove_timeout(document_link_cb,this);queued_link.clear();pending_anchor.clear();
+        preview_text_available=false;preview_rtf=false;preview_csv=false;preview_markdown=false;preview_renderable=false;source_mode=false;
+        preview_language.clear();preview_text.clear();preview_styles.clear();preview_raw_rtf.clear();preview_raw_text.clear();preview_encoding.clear();preview_content_type.clear();preview_document={};preview_document_theme.clear();
+        encoding_choice->value(0);preview_encoding_index=0;layout_file_toolbar();
+        image_canvas->clear();text_buffer.text("");style_buffer.text("");document_view->value("");
         show_message("Fetching…");idle_status="Fetching "+loc.path;status_text(idle_status);persist();
-        auto job=std::make_shared<Job>();job->snapshot=request_config();job->location=loc;job->generation=generation;
+        auto job=std::make_shared<Job>();job->snapshot=request_config();job->location=loc;job->generation=generation;job->dark=dark_mode;
         pending_fetch=job;launch_pending();
     }
     void launch_pending() {
@@ -651,9 +835,47 @@ public:
                 if(!job->is_listing) {
                     std::string name=basename(job->location.path);
                     if(image_supported(name,response.content_type)) {job->image=decode_image(response.bytes,name,response.content_type);job->is_image=true;job->detail=job->image.description;}
-                    else if(text_supported(name,response.content_type,response.bytes)) {
-                        auto prepared=prepare_styled_text(response.bytes);job->text=std::move(prepared.text);job->styles=std::move(prepared.styles);job->is_text=true;job->detail=human_size(response.bytes.size())+" · Read-only text";
-                    } else job->detail="Preview is not available for this file.\n\nUse Save As to download it, or open it in your browser.";
+                    else {
+                        job->is_rtf=document::rtf_supported(name,response.content_type);
+                        // RTF owns its in-band encoding and can contain arbitrary
+                        // binary object bytes. Source decoding must never gate its parser.
+                        DecodedPreview prepared;
+                        if(job->is_rtf) {
+                            try {prepared=decode_preview(response.bytes,name,"");}
+                            catch(const std::exception&) {prepared.source=prepare_styled_text(response.bytes);}
+                        }else prepared=decode_preview(response.bytes,name,response.content_type);
+                        if(job->is_rtf||prepared.supported) {
+                            job->text=std::move(prepared.source.text);job->styles=std::move(prepared.source.styles);job->text_encoding=std::move(prepared.encoding);job->is_text=true;
+                            job->text_size=response.bytes.size();job->content_type=response.content_type;
+                            if(!job->is_rtf)job->raw_text.assign(response.bytes.begin(),response.bytes.begin()+std::min(response.bytes.size(),text_input_limit+1));
+                            const std::string description=human_size(response.bytes.size())+" · "+(job->is_rtf?"":job->text_encoding+" · ");
+                            job->detail=description+"Read-only text";
+                            job->is_markdown=!job->is_rtf&&document::markdown_supported(name,response.content_type);
+                            job->is_csv=!job->is_rtf&&!job->is_markdown&&document::csv_supported(name,response.content_type);
+                            job->language=job->is_markdown||job->is_rtf||job->is_csv?"":document::language_for_filename(name);
+                            if(job->language=="plaintext")job->language.clear();
+                            if(!job->language.empty()) {
+                                job->styles=document::syntax_styles(job->text,job->language);
+                                job->detail=description+job->language+" · Read-only code";
+                            }
+                            if(job->is_markdown||job->is_rtf||job->is_csv) {
+                                const std::string format=job->is_rtf?"RTF":job->is_csv?"CSV":"Markdown";
+                                const std::string prefix=description+format;
+                                const auto render_size=job->is_rtf?response.bytes.size():job->text.size();
+                                if(render_size<=formatted_render_limit) {
+                                    try {
+                                        if(job->is_rtf) {
+                                            job->raw_rtf.assign(response.bytes.begin(),response.bytes.end());
+                                            // RTF is a document with explicit text colors. A white
+                                            // paper surface keeps those colors readable in either UI mode.
+                                            job->rendered_document=document::render_rtf(job->raw_rtf,"#1f252c","#ffffff","#2369a8");
+                                        }else job->rendered_document=job->is_csv?make_csv(job->text,job->dark):make_markdown(job->text,job->snapshot.code_theme,job->dark);
+                                        job->renderable_document=true;job->detail=prefix;
+                                    }catch(const std::exception&e){job->detail=prefix+" source · "+std::string(e.what());}
+                                }else job->detail=prefix+" source · Rendered preview limit: 512 KiB";
+                            }
+                        }else job->detail="Preview is not available for this file.\n\nUse Save As to download it, or open it in your browser.";
+                    }
                 }
             }catch(const std::exception&e){job->cancelled=job->progress.cancel.load();job->error=safe_error(e.what(),job->snapshot);}
             if(job->progress.cancel.load())job->cancelled=true;
@@ -669,12 +891,7 @@ public:
         for(const auto&e:directory.entries)if(needle.empty()||lower_ascii(e.name).find(needle)!=std::string::npos)table->entries.push_back(e);
         int col=table->sort_column;bool desc=table->descending,show_sizes=config.show_directory_sizes;
         std::stable_sort(table->entries.begin(),table->entries.end(),[col,desc,show_sizes](const Entry&a,const Entry&b){
-            if(a.directory!=b.directory)return a.directory;
-            int cmp=0;
-            if(col==1&&(!a.directory||show_sizes)&&a.size_known&&b.size_known&&a.size!=b.size)cmp=a.size<b.size?-1:1;
-            else if(col==2&&a.modified!=b.modified)cmp=a.modified<b.modified?-1:1;
-            else {auto an=lower_ascii(a.name),bn=lower_ascii(b.name);cmp=an<bn?-1:(an>bn?1:0);}
-            return desc?cmp>0:cmp<0;
+            return entry_less(a,b,col,desc,show_sizes);
         });
         table->show_directory_sizes=config.show_directory_sizes;
         table->rows(int(table->entries.size()));table->row_height_all(FileTable::row_height_pixels);table->select_all_rows(0);table->adjust_columns();table->redraw();
@@ -717,7 +934,17 @@ public:
         }else {
             file_view=true;file_title->copy_label(basename(current_path).c_str());file_title->copy_tooltip(current_path.c_str());file_title->show();save_button->show();browser_button->show();
             if(j->is_image){image_canvas->set(std::move(j->image));image_canvas->show();}
-            else if(j->is_text){text_buffer.text(j->text.c_str());style_buffer.text(j->styles.c_str());text_display->scroll(1,0);text_display->show();}
+            else if(j->is_text){
+                preview_text_available=true;preview_rtf=j->is_rtf;preview_csv=j->is_csv;preview_markdown=j->is_markdown;preview_renderable=j->renderable_document;
+                preview_text=std::move(j->text);preview_styles=std::move(j->styles);preview_language=std::move(j->language);preview_raw_rtf=std::move(j->raw_rtf);
+                preview_raw_text=std::move(j->raw_text);preview_encoding=std::move(j->text_encoding);preview_content_type=std::move(j->content_type);preview_size=j->text_size;
+                preview_document=std::move(j->rendered_document);preview_document_theme=j->snapshot.code_theme;preview_document_dark=j->dark;
+                text_buffer.text(preview_text.c_str());style_buffer.text(preview_styles.c_str());text_display->scroll(1,0);
+                document_view->value(preview_document.html.c_str());document_view->topline(0);document_view->leftline(0);
+                show_text_preview();
+                if(preview_renderable&&!pending_anchor.empty())jump_to_document_anchor(pending_anchor);
+                pending_anchor.clear();
+            }
             else {message->copy_label(j->detail.c_str());message->show();}
             idle_status=j->is_image||j->is_text?j->detail:"Ready · Download available";status_text(idle_status);
         }
@@ -784,8 +1011,8 @@ public:
         if(closing)return;
         if(settings&&settings->shown()){settings->show();return;}
         if(!settings) {
-            auto g=on_screen(config.settings_window,560,540);window->end();
-            settings=std::make_unique<SettingsWindow>(g.x,g.y,g.w,g.h,"Copyparty Viewer — Settings");settings->set_non_modal();settings->size_range(560,540);
+            auto g=on_screen(config.settings_window,560,570);window->end();
+            settings=std::make_unique<SettingsWindow>(g.x,g.y,g.w,g.h,"Copyparty Viewer — Settings");settings->set_non_modal();settings->size_range(560,570);
             if(app_icon->w()>0)settings->icon(app_icon.get());
             settings->begin();
             auto* heading=new Fl_Box(20,14,520,28,"Connection");heading->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);heading->labelsize(17);heading->labelfont(FL_HELVETICA_BOLD);
@@ -798,20 +1025,25 @@ public:
             settings_modern=new AnimatedToggle(178,282,250,32,"Retro","Modern");settings_modern->tooltip("Retro terminal-style listing or Modern table · Space toggles; Left/Right selects");
             auto* sizes_label=new Fl_Box(20,330,150,32,"Directory sizes");sizes_label->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);
             settings_sizes=new AnimatedToggle(178,330,250,32,"Off","On");settings_sizes->tooltip("Display directory sizes reported by Copyparty in both views");
-            auto* listing_note=new Fl_Box(20,372,520,48,"Both views keep clickable names, navigation and previews.\nDirectory sizes are the values reported by your server.");listing_note->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);listing_note->labelsize(12);
+            auto* code_label=new Fl_Box(20,380,150,30,"Code theme");code_label->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);
+            settings_code_theme=new Fl_Choice(178,380,250,30);settings_code_theme->textsize(14);
+            for(const auto& theme:document::themes())settings_code_theme->add(theme.label);
+            settings_code_theme->tooltip("Colors for source files and Markdown code blocks · follows the operating-system appearance");
+            auto* listing_note=new Fl_Box(20,426,520,38,"Code colors apply to source files and Markdown code blocks.\nLight and dark palettes follow your operating system.");listing_note->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE);listing_note->labelsize(12);
             settings_error=new Fl_Box(20,448,520,30);settings_error->align(FL_ALIGN_LEFT|FL_ALIGN_INSIDE|FL_ALIGN_WRAP);settings_error->labelsize(12);settings_error->labelcolor(fl_rgb_color(190,65,65));
             settings_cancel=new Fl_Button(352,490,88,30,"Cancel");settings_save=new Fl_Return_Button(452,490,88,30,"Save");
             settings->end();
             // Position controls explicitly so resizing never shifts the toggle rows.
             settings->resizable(listing_note);
-            settings->layout=[this,heading,listing_heading,listing_note,url_label,usr_label,pwd_label,view_label,sizes_label]{
+            settings->layout=[this,heading,listing_heading,listing_note,url_label,usr_label,pwd_label,view_label,sizes_label,code_label]{
                 int W=settings->w(),H=settings->h();
                 url_label->resize(20,56,105,28);usr_label->resize(20,98,105,28);pwd_label->resize(20,140,105,28);
                 settings_url->resize(127,56,W-147,28);settings_user->resize(127,98,W-147,28);settings_pass->resize(127,140,W-147,28);
                 heading->resize(20,14,W-40,28);settings_note->resize(20,180,W-40,56);
-                listing_heading->resize(20,244,W-40,28);listing_note->resize(20,372,W-40,48);
+                listing_heading->resize(20,244,W-40,28);listing_note->resize(20,426,W-40,38);
                 view_label->resize(20,282,150,32);settings_modern->resize(178,282,250,32);
                 sizes_label->resize(20,330,150,32);settings_sizes->resize(178,330,250,32);
+                code_label->resize(20,380,150,30);settings_code_theme->resize(178,380,std::min(320,W-198),30);
                 settings_error->resize(20,H-92,W-40,30);
                 settings_cancel->resize(W-208,H-50,88,30);settings_save->resize(W-108,H-50,88,30);
             };
@@ -823,6 +1055,8 @@ public:
         }
         settings_url->value(config.server.c_str());settings_user->value(config.username.c_str());settings_pass->value(config.password.c_str());
         settings_modern->value(config.modern_ui);settings_sizes->value(config.show_directory_sizes);
+        settings_code_theme->value(0);
+        for(std::size_t i=0;i<document::themes().size();++i)if(config.code_theme==document::themes()[i].id)settings_code_theme->value(int(i));
         settings_error->copy_label("");settings->show();apply_titlebar_theme(*settings,dark_mode);
     }
     void dismiss_settings() {
@@ -834,9 +1068,12 @@ public:
             Config next=config;next.server=normalize_server(settings_url->value());next.username=settings_user->value();next.password=settings_pass->value();
             next.credentials_saved=true;
             next.modern_ui=settings_modern->value();next.show_directory_sizes=settings_sizes->value();
+            const int theme_index=settings_code_theme->value();
+            next.code_theme=theme_index>=0&&theme_index<int(document::themes().size())?document::themes()[std::size_t(theme_index)].id:"default";
             bool server_changed=next.server!=config.server;
             bool auth_changed=next.username!=config.username||next.password!=config.password;
             bool mode_changed=next.modern_ui!=config.modern_ui;
+            bool theme_changed=next.code_theme!=config.code_theme;
             bool view_changed=mode_changed||next.show_directory_sizes!=config.show_directory_sizes;
             int saved_scroll=config.modern_ui?table->row_position():retro->scroll_position();
             next.settings_window={settings->x(),settings->y(),settings->w(),settings->h(),false};if(server_changed)next.last_path="/";
@@ -844,6 +1081,7 @@ public:
             config=std::move(next);
             if(server_changed||auth_changed){username->value(config.username.c_str());password->value(config.password.c_str());}
             settings->hide();
+            if(theme_changed)palette_widgets();
             if(server_changed){history.clear();history_index=-1;navigate("/",FetchKind::Listing);}
             else if(auth_changed)reload();
             else {
@@ -860,7 +1098,7 @@ public:
         remember_geometry(true);persist();closing=true;
         if(settings)settings->hide();
         pending_fetch.reset();for(auto&j:jobs)j->progress.cancel=true;
-        if(jobs.empty())window->hide();else{status_text("Closing…");for(Fl_Widget*w:std::vector<Fl_Widget*>{path,username,password,fetch_button,back,forward,up,refresh,settings_button,filter,save_button,browser_button})w->deactivate();}
+        if(jobs.empty())window->hide();else{status_text("Closing…");for(Fl_Widget*w:std::vector<Fl_Widget*>{path,username,password,fetch_button,back,forward,up,refresh,settings_button,filter,save_button,browser_button,source_button,encoding_choice})w->deactivate();}
     }
     int shortcut(int event) {
         if(event!=FL_SHORTCUT&&event!=FL_KEYDOWN)return 0;

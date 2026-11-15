@@ -1,6 +1,6 @@
 get_filename_component(root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(stage "${root}/build/source-package")
-set(name "Copyparty-Viewer-1.0.0")
+set(name "Copyparty-Viewer-2.0.0")
 file(REMOVE_RECURSE "${stage}")
 file(MAKE_DIRECTORY "${stage}/${name}" "${root}/dist")
 # Explicit allowlist excludes build products, local settings, logs and test credentials.
@@ -25,5 +25,5 @@ foreach(item CMakeLists.txt Makefile README.md BUILDING.md LICENSE THIRD_PARTY_N
   endif()
 endforeach()
 include("${CMAKE_CURRENT_LIST_DIR}/ArchiveTar.cmake")
-cpv_create_tar("${root}/dist/Copyparty-Viewer-1.0.0-Source.tar.gz" "${stage}" "${name}")
-message(STATUS "Created ${root}/dist/Copyparty-Viewer-1.0.0-Source.tar.gz")
+cpv_create_tar("${root}/dist/Copyparty-Viewer-2.0.0-Source.tar.gz" "${stage}" "${name}")
+message(STATUS "Created ${root}/dist/Copyparty-Viewer-2.0.0-Source.tar.gz")

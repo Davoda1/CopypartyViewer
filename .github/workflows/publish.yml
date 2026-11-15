@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       release_id:
-        description: Existing draft release ID for v1.0.0
+        description: Existing draft release ID for v2.0.0
         required: true
         type: string
       windows_sha256:
@@ -34,7 +34,7 @@ permissions:
   security-events: read
 
 concurrency:
-  group: publish-v1.0.0
+  group: publish-v2.0.0
   cancel-in-progress: false
 
 env:

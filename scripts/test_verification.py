@@ -4,6 +4,7 @@
 import copy
 import hashlib
 import io
+import json
 from pathlib import Path
 import shutil
 import stat
@@ -161,6 +162,56 @@ class RepositoryTests(unittest.TestCase):
             with self.assertRaises(packages.VerificationError):
                 repository.verify_defaults(root)
 
+    def test_md4c_pin_and_modified_parser_rejection(self):
+        source = Path(__file__).resolve().parents[1]
+        records = json.loads((source / "vendor/dependencies.json").read_text(encoding="utf-8"))
+        repository.verify_md4c(source, records)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shutil.copytree(source / "vendor/md4c", root / "vendor/md4c")
+            for name in ("md4c.c", "entity.c", "LICENSE.md"):
+                path = root / "vendor/md4c" / name
+                original = path.read_bytes()
+                path.write_bytes(original + b"changed")
+                with self.subTest(name=name), self.assertRaises(packages.VerificationError):
+                    repository.verify_md4c(root, records)
+                path.write_bytes(original)
+
+    def test_md4c_missing_pin_and_duplicate_identity_rejection(self):
+        source = Path(__file__).resolve().parents[1]
+        records = json.loads((source / "vendor/dependencies.json").read_text(encoding="utf-8"))
+        incomplete = copy.deepcopy(records)
+        md4c = next(item for item in incomplete if item.get("name") == "MD4C")
+        del md4c["files"]["md4c/md4c.h"]
+        for manifest in (incomplete, records + [md4c],
+                         [item for item in records if item.get("name") != "MD4C"]):
+            with self.assertRaises(packages.VerificationError):
+                repository.verify_md4c(source, manifest)
+
+    def test_required_upstream_notices_are_intact_and_packaged(self):
+        source = Path(__file__).resolve().parents[1]
+        expected = packages.documentation(source)
+        names = ("MD4C-LICENSE.md", "Unicode-LICENSE.txt")
+        for name in names:
+            self.assertIn("third-party-licenses/" + name, expected)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / "packaging/third-party-licenses"
+            directory.mkdir(parents=True)
+            for name in names:
+                (directory / name).write_bytes(expected["third-party-licenses/" + name])
+            packages.verify_notices(root)
+            for name in names:
+                path = directory / name
+                original = path.read_bytes()
+                path.write_bytes(original[:len(original) // 2])
+                with self.subTest(name=name, state="truncated"), self.assertRaises(packages.VerificationError):
+                    packages.verify_notices(root)
+                path.unlink()
+                with self.subTest(name=name, state="missing"), self.assertRaises(packages.VerificationError):
+                    packages.verify_notices(root)
+                path.write_bytes(original)
+
     def test_current_workflow_policy_and_unpinned_rejection(self):
         source = Path(__file__).resolve().parents[1]
         repository.verify_workflows(source)
@@ -172,6 +223,89 @@ class RepositoryTests(unittest.TestCase):
             path.write_text(text.replace("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "actions/checkout@v7"))
             with self.assertRaises(packages.VerificationError):
                 repository.verify_workflows(root)
+
+    def test_missing_suite_inventory_or_filtered_ctest_rejected(self):
+        source = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shutil.copytree(source / ".github/workflows", root / ".github/workflows")
+            path = root / ".github/workflows/ci.yml"
+            original = path.read_text()
+            for before, after in (("python scripts/verify_repository.py --ctest-dir build/ci/app", "echo skipped"),
+                                  ("ctest --test-dir build/ci/app --output-on-failure",
+                                   "ctest --test-dir build/ci/app --output-on-failure -R core-tests")):
+                path.write_text(original.replace(before, after))
+                with self.subTest(before=before), self.assertRaises(packages.VerificationError):
+                    repository.verify_workflows(root)
+
+    def test_ci_rejects_broadened_or_missing_preflight_triggers(self):
+        source = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shutil.copytree(source / ".github/workflows", root / ".github/workflows")
+            path = root / ".github/workflows/ci.yml"
+            original = path.read_text()
+            mutations = [original.replace("tags: ['preflight-*']", "tags: " + tags)
+                         for tags in ("['*']", "['v*']", "['preflight-*', 'v*']", "['preflight-**']")]
+            mutations.extend((original.replace("    tags: ['preflight-*']\n", ""),
+                              original.replace("branches: [master]", "branches: [master, topic]", 1),
+                              original.replace("  pull_request:\n    branches: [master]\n", ""),
+                              original.replace("on:\n", "on:\n  workflow_dispatch:\n", 1),
+                              original.replace("on:\n", "on:\n  release:\n", 1)))
+            for index, changed in enumerate(mutations):
+                path.write_text(changed)
+                with self.subTest(mutation=index), self.assertRaises(packages.VerificationError):
+                    repository.verify_workflows(root)
+
+    def test_publication_rejects_automatic_tag_or_release_triggers(self):
+        source = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shutil.copytree(source / ".github/workflows", root / ".github/workflows")
+            path = root / ".github/workflows/publish.yml"
+            original = path.read_text()
+            for event in ("  push:\n    tags: ['preflight-*']\n", "  release:\n"):
+                path.write_text(original.replace("on:\n", "on:\n" + event, 1))
+                with self.subTest(event=event), self.assertRaises(packages.VerificationError):
+                    repository.verify_workflows(root)
+
+
+def configured_ctest_inventory():
+    names = ("core-tests", "preview-tests", "document-tests", "rtf-tests", "csv-tests",
+             "text-encoding-tests", "http-fixture", "retro-tests")
+    return {"tests": [{"name": name,
+                       "command": [name] + (["--public-defaults"] if name in ("core-tests", "http-fixture") else []),
+                       "properties": []} for name in names]}
+
+
+class ConfiguredTests(unittest.TestCase):
+    def test_all_required_suites_and_additional_tests_are_accepted(self):
+        inventory = configured_ctest_inventory()
+        repository.validate_ctest_inventory(inventory)
+        inventory["tests"].append({"name": "additional-regression", "command": ["additional-regression"]})
+        repository.validate_ctest_inventory(inventory)
+
+    def test_omitted_disabled_or_unbuilt_suite_is_rejected(self):
+        original = configured_ctest_inventory()
+        for index, test in enumerate(original["tests"]):
+            for state in ("missing", "disabled", "expects-failure", "unbuilt"):
+                inventory = copy.deepcopy(original)
+                if state == "missing":
+                    del inventory["tests"][index]
+                elif state == "unbuilt":
+                    del inventory["tests"][index]["command"]
+                else:
+                    inventory["tests"][index]["properties"].append(
+                        {"name": "DISABLED" if state == "disabled" else "WILL_FAIL", "value": True})
+                with self.subTest(suite=test["name"], state=state), self.assertRaises(packages.VerificationError):
+                    repository.validate_ctest_inventory(inventory)
+
+    def test_public_defaults_must_run_in_core_and_http_suites(self):
+        for name in ("core-tests", "http-fixture"):
+            inventory = configured_ctest_inventory()
+            next(test for test in inventory["tests"] if test["name"] == name)["command"].remove("--public-defaults")
+            with self.subTest(suite=name), self.assertRaises(packages.VerificationError):
+                repository.validate_ctest_inventory(inventory)
 
 
 SHA = "a" * 40
@@ -191,7 +325,7 @@ class FakeAPI:
                         "updated_at": "2026-01-01T00:00:00Z"}
                        for i, name in enumerate(packages.NAMES.values(), 1)]
         self.release = {"id": 8, "draft": True, "prerelease": False, "tag_name": gate.TAG,
-                        "target_commitish": SHA, "name": "1.0.0", "body": "Release notes", "assets": self.assets}
+                        "target_commitish": SHA, "name": "2.0.0", "body": "Release notes", "assets": self.assets}
         self.master = SHA
         self.tag = SHA
         self.alerts = []
@@ -259,6 +393,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_other_revision_branch_workflow_or_repository_block(self):
         for key, value in (("head_sha", "b" * 40), ("head_branch", "topic"), ("event", "pull_request"),
+                           ("head_branch", "preflight-2.0.0-test"), ("event", "workflow_dispatch"),
                            ("workflow_id", 3), ("repository", {"full_name": "example/other"})):
             api = FakeAPI()
             api.run[key] = value
@@ -365,7 +500,7 @@ class ReleaseTests(unittest.TestCase):
         result = {name: {"sha256": sha} for name, sha in HASHES.items()}
         with patch.object(gate, "verify_packages", return_value=result):
             url = gate.publish(api, Path("."), SHA, 7, 8, HASHES, receipt)
-        self.assertTrue(url.endswith("/releases/tag/v1.0.0"))
+        self.assertTrue(url.endswith("/releases/tag/v2.0.0"))
         self.assertEqual([(path, method, body) for path, method, body in api.calls if method != "GET"],
                          [("releases/8", "PATCH", {"draft": False, "make_latest": "true"})])
 

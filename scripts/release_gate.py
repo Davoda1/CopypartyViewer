@@ -18,11 +18,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from verify_packages import MAX_FILE, NAMES, VerificationError, digest, require, verify_packages
+from verify_packages import MAX_FILE, NAMES, VERSION, VerificationError, digest, require, verify_packages
 
 
 REPOSITORY = "Davoda1/CopypartyViewer"
-TAG = "v1.0.0"
+TAG = "v" + VERSION
 API = "https://api.github.com"
 API_VERSION = "2026-03-10"
 CHECKS = {"Repository", "Linux", "Windows"}

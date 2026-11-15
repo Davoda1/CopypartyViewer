@@ -1,6 +1,6 @@
 # Building Copyparty Viewer
 
-Version **1.0.0**. Copyright (C) 2026 davoda1. The application is C++17. GNU Make is the entry point on both operating systems; CMake performs the project-local dependency builds and packaging. None of these tools is required to run the packaged application.
+Version **2.0.0**. Copyright (C) 2026 davoda1. The application is C++17. GNU Make is the entry point on both operating systems; CMake performs the project-local dependency builds and packaging. None of these tools is required to run the packaged application.
 
 ## Requirements
 
@@ -28,10 +28,10 @@ The repository and GitHub-generated source archives include the exact dependency
 
 ## Native build
 
-Clone the repository or download the release's automatically generated source archive. To check out version 1.0.0 specifically:
+Clone the repository or download the release's automatically generated source archive. To check out version 2.0.0 specifically:
 
 ```sh
-git clone --branch v1.0.0 --depth 1 https://github.com/Davoda1/CopypartyViewer.git
+git clone --branch v2.0.0 --depth 1 https://github.com/Davoda1/CopypartyViewer.git
 cd CopypartyViewer
 ```
 
@@ -54,8 +54,8 @@ mingw32-make package
 
 Default outputs are `build/native/app/copyparty-viewer` on Linux or `build/native/app/CopypartyViewer.exe` on Windows. Packaging writes to `dist/`:
 
-- Windows: `Copyparty-Viewer-1.0.0-Windows-x64.zip`.
-- Linux: `Copyparty-Viewer-1.0.0-Linux-amd64.tar.gz` and `copyparty-viewer_1.0.0_amd64.deb`.
+- Windows: `Copyparty-Viewer-2.0.0-Windows-x64.zip`.
+- Linux: `Copyparty-Viewer-2.0.0-Linux-amd64.tar.gz` and `copyparty-viewer_2.0.0_amd64.deb`.
 
 Each operating system builds and packages its native binary from the same source tree. Creating all three binary packages from one Linux workstation is also possible with the optional MinGW cross toolchain below. These are the only three assets uploaded to a GitHub release. GitHub generates its own source ZIP/TAR.GZ links from the release tag and computes the uploaded assets' SHA-256 digests.
 
@@ -130,6 +130,7 @@ Do not commit customized defaults or saved settings. The private file and genera
 | libjpeg-turbo | 3.2.1 | JPEG preview, traditional libjpeg API |
 | libwebp | 1.6.0 | WebP decoder and demuxer |
 | nlohmann/json | 3.12.0 | Single-file settings and server listing parsing |
+| MD4C | 0.5.2 | Native Markdown parser and entity decoding; compiled into the application |
 | NanoSVG | FLTK 1.4.5 bundled revision | SVG parsing and rasterization |
 
 `vendor/dependencies.json`, `vendor/sources/SHA256SUMS` and `cmake/Sources.cmake` record exact archive URLs and SHA-256 hashes. NanoSVG header hashes identify its bundled revision. The dependency build verifies archive hashes before extracting them. `make fetch-deps` retrieves only missing pinned archives and refuses to silently replace a file with an unexpected hash.
@@ -139,6 +140,18 @@ FLTK is configured to use the pinned PNG, JPEG and zlib archives instead of its 
 curl supports HTTP and HTTPS only, with basic authentication and the threaded resolver. The curl command-line tool, SSH, LDAP, HTTP/2/3 and optional compression libraries are not built. gzip/deflate use the already included zlib. Linux OpenSSL has no shared libraries, loadable providers, applications, tests or documentation in the runtime package. Its standard provider is built into the executable. System CA certificates remain required on Linux. Windows certificate verification uses Schannel and the Windows certificate store.
 
 The Linux compatibility build uses GCC 10 and the portable WebP decoder because libwebp 1.6.0's AVX2 source uses an intrinsic absent from that compiler's headers. WebP decoding and first-frame support remain available. Builds with GCC 11 or newer enable WebP's CPU-dispatched SIMD. JPEG SIMD is enabled on both release platforms through NASM.
+
+## Documents, code themes and text decoding
+
+`src/document.cpp` uses bundled MD4C with raw HTML disabled, simple tables, task lists and URL autolinks. It emits a restricted HTML subset for FLTK's native `Fl_Help_View`. The application's lexical highlighter supplies ten light/dark code palettes to Markdown code blocks and recognized source-file previews. It does not execute code or start a language server. MD4C's unmodified source hashes and MIT notice are retained in `vendor/md4c`.
+
+`src/rtf.cpp` provides bounded basic RTF formatting and text decoding. It reads original bytes, handles CP1250/CP1252/UTF-8 declarations and Unicode escapes, and skips embedded resources, metadata and field instructions. `src/csv.cpp` parses comma-, semicolon- or tab-delimited data, including quoted multiline fields, and escapes every cell before emitting a native table. Neither parser loads document resources or executes fields or formulas.
+
+`src/text_encoding.cpp` converts bounded previews to UTF-8. Auto uses BOMs, supported server charset declarations, conservative Unicode byte-alignment checks, valid UTF-8 and a CP1250 fallback. Explicit choices cover CP1250, CP1252 and UTF-8/16/32 in the documented byte orders. The existing text preparer normalizes CRLF/LF/CR and retains ordinary ANSI styles. Original downloads are unaffected. Unicode's mapping-data notice is included with the packages.
+
+Formatted previews are limited to 512 KiB. CSV adds row, column, field, cell-count and output limits documented in the README. Larger or unsupported documents retain source preview and a status explanation. Text input/display is bounded at 8 MiB. Markdown images become alternative-text links; raw HTML is escaped. Rendered links are inert identifiers in an in-memory registry until explicitly clicked. Matching server links use the viewer's normal boundary checks; external HTTP/HTTPS and query links go to the browser without application credentials.
+
+Settings stores the code theme as `appearance.code_theme` in the existing JSON schema. Missing or invalid values use `default`; account, geometry and listing settings retain their existing meanings. The file encoding selector is local to the open file and resets to Auto when navigating.
 
 ## Static linking and platform compatibility
 
@@ -167,7 +180,7 @@ For Windows, use the matching `objdump.exe -p build/native/app/CopypartyViewer.e
 
 ## Tests
 
-With the default options, `make test` runs core regression tests and image/text preview fixtures without a display server or a real account. The tests exercise settings round trips, reversible obfuscation, URL/path handling, directory parsing and bounded preview decoding, including malformed input.
+With the default options, `make test` runs six suites: core, image/text previews, Markdown/highlighting, RTF, CSV and text encodings. They require no display server or real account. Coverage includes settings, URL/path boundaries, strict size ordering, safe document links, formatting, encoding and line-ending cases, malformed input and preview limits.
 
 Additional CTest coverage is opt-in:
 
@@ -212,7 +225,7 @@ Use `retro-tests.exe` on Windows. On Linux, an existing X11 session or a develop
 
 ## GitHub CI and releases
 
-The **CI** workflow in `.github/workflows/ci.yml` provides the **Repository**, **Linux** and **Windows** checks. Platform jobs build the pinned dependencies and run the public-default, local HTTP, image/text and Retro interaction suites. Linux supplies the test display through Xvfb and also runs CodeQL C++ analysis; Windows executes native MinGW-built tests. These are configured checks, not a claim that a particular commit has passed: consult its [Actions run](https://github.com/Davoda1/CopypartyViewer/actions).
+The **CI** workflow in `.github/workflows/ci.yml` provides the **Repository**, **Linux** and **Windows** checks. Platform jobs build the pinned dependencies and run all six regression suites with public-default assertions, plus local HTTP and Retro interaction tests. Linux supplies the test display through Xvfb and also runs CodeQL C++ analysis; Windows executes native MinGW-built tests. These are configured checks, not a claim that a particular commit has passed: consult its [Actions run](https://github.com/Davoda1/CopypartyViewer/actions).
 
 The separately dispatched **Publish release** workflow in `.github/workflows/publish.yml` publishes an existing draft. It takes the exact commit, its CI run ID, the draft release ID and the three locally verified binary SHA-256 digests. **Validate draft** waits a bounded time for that exact CI run, checks the commit against `master` and the release tag, and requires exactly the three expected binary assets. It also requires completed CodeQL analysis for that exact commit, without analysis errors/warnings or open findings. It compares the supplied digests with GitHub's asset metadata and freshly downloaded bytes. The separate **Publish** job revalidates the release before publishing it.
 

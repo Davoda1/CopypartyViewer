@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [master]
+    tags: ['preflight-*']
   pull_request:
     branches: [master]
 
@@ -76,8 +77,10 @@ jobs:
           queries: security-extended
       - name: Build the application and regression executables
         run: make build BUILD_DIR=build/ci JOBS=3 CMAKE_ARGS='-DCPV_VERIFY_PUBLIC_DEFAULTS=ON -DCPV_TEST_HTTP=ON -DCPV_TEST_RETRO=ON'
-      - name: Run core, public-default, HTTP, preview and Retro checks
-        run: xvfb-run --auto-servernum ctest --test-dir build/ci/app --output-on-failure
+      - name: Verify configured suites and run all native regression checks
+        run: |
+          python3 scripts/verify_repository.py --ctest-dir build/ci/app
+          xvfb-run --auto-servernum ctest --test-dir build/ci/app --output-on-failure
       - name: Inspect Linux package contents and platform imports
         run: |
           cmake -DCPV_BUILD_DIR="$PWD/build/ci" -P cmake/PackageRelease.cmake
@@ -145,10 +148,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           mingw32-make build BUILD_DIR=build/ci JOBS=3 'CMAKE_ARGS=-DCPV_VERIFY_PUBLIC_DEFAULTS=ON -DCPV_TEST_HTTP=ON -DCPV_TEST_RETRO=ON'
-      - name: Run core, public-default, HTTP, preview and Retro checks
+      - name: Verify configured suites and run all native regression checks
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
+          python scripts/verify_repository.py --ctest-dir build/ci/app
           ctest --test-dir build/ci/app --output-on-failure
       - name: Inspect Windows package contents and platform imports
         run: |

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0
+
+- Adds native Markdown rendering for headings, emphasis, lists, quotations, tables, task markers, links and code blocks, with a Source / Rendered switch.
+- Adds lexical highlighting for common source/configuration files and Markdown code blocks. Settings offers Default, VS Code, GitHub, Monokai, Nord, Dracula, Solarized, Codex, Xcode Classic and Ayu, with automatic light/dark palettes.
+- Adds basic RTF previews with styles, font sizes, RGB colors, paragraphs and alignment; supports CP1250, CP1252, declared UTF-8 and Unicode escapes while ignoring embedded resources and field instructions.
+- Adds CSV/TSV table previews with quoted delimiters, escaped quotes, multiline and empty cells, automatic comma/semicolon/tab detection and optional Excel separator directives.
+- Adds CP1250/CP1252 and UTF-8/16/32 decoding, BOM/charset detection and a file encoding selector that reuses already fetched bytes. CRLF, LF and CR line endings are normalized for viewing; downloads preserve original bytes.
+- Fixes inconsistent size comparisons when known and unknown values mix. Unknown sizes follow known sizes in either direction, folders remain first, and ties use deterministic name/path comparisons.
+- Resolves explicit document links through the configured server boundary or opens HTTP/HTTPS/query links in the browser without attaching application credentials. Long and duplicate Markdown headings use safe native anchor identifiers.
+- Bounds formatted previews and falls back to source with an explanation for oversized or unsupported documents. Raw HTML is escaped, Markdown images become alternative-text links, and CSV values never execute formulas.
+- Preserves existing Modern/Retro navigation, image previews, account-saving behavior and settings compatibility.
+- Retains the public demo URL, empty compiled credentials, MIT licensing, pinned offline dependencies and the existing native build/security/publication gates. Adds MD4C and Unicode mapping-data notices.
+
 ## 1.0.0
 
 Initial cross-platform release of **Copyparty Viewer**, by **davoda1**.
