@@ -7,7 +7,7 @@
 #include <vector>
 
 namespace cpv {
-inline constexpr const char* version = "2.0.0";
+inline constexpr const char* version = "2.1.0";
 struct Geometry { int x = -1, y = -1, w = 1100, h = 700; bool maximized = false; };
 struct Config {
     std::string server, username, password, last_path = "/";

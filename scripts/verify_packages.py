@@ -13,7 +13,7 @@ import tarfile
 import zipfile
 
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 NAMES = {
     "windows": f"Copyparty-Viewer-{VERSION}-Windows-x64.zip",
     "deb": f"copyparty-viewer_{VERSION}_amd64.deb",

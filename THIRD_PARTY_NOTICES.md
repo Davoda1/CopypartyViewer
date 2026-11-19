@@ -1,8 +1,10 @@
 # Third-party notices
 
-Copyparty Viewer 2.0.0 is Copyright (C) 2026 davoda1. Project-owned code and documentation are distributed under the MIT License. Third-party copyrights and licenses remain with their respective authors. The project's license does not replace the terms listed below.
+Copyparty Viewer 2.1.0 is Copyright (C) 2026 davoda1. Project-owned code and documentation are distributed under the MIT License. Third-party copyrights and licenses remain with their respective authors. The project's license does not replace the terms listed below.
 
 Copyparty Viewer is based in part on the work of the FLTK project (https://www.fltk.org). This software is based in part on the work of the Independent JPEG Group.
+
+The build applies local FLTK table-layout and long-line text-display corrections through `cmake/PatchFltkHelpView.cmake` and `cmake/PatchFltkTextDisplay.cmake`. The original FLTK source archive, copyright and license notices are retained unchanged.
 
 | Component | Included version | License / notice file |
 | --- | --- | --- |

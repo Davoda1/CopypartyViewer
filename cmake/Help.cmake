@@ -1,4 +1,4 @@
-message("Copyparty Viewer 2.0.0 — build and packaging")
+message("Copyparty Viewer 2.1.0 — build and packaging")
 message("  make                 Build the executable and private static dependencies")
 message("  make deps            Build dependencies only")
 message("  make test            Build and run regression tests")

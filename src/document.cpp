@@ -501,6 +501,7 @@ bool markdown_supported(const std::string& filename, const std::string& content_
 }
 RenderedDocument render_document(const std::string& text, const std::string& theme_id,
     bool dark, const std::string& foreground_hex, const std::string& background_hex, const std::string& link_hex) {
+    if (text.size() > 25u * 1024u * 1024u) throw std::length_error("Markdown exceeds the 25 MiB formatted-preview limit. Use Source.");
     if (text.size() > std::numeric_limits<MD_SIZE>::max()) throw std::length_error("Markdown input is too large.");
     Renderer r;
     r.colors = palette(theme_id, dark);

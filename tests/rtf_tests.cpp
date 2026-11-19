@@ -117,7 +117,12 @@ void malformed() {
     rejects(R"({\rtf1\ansicpg65001\'ed\'a0\'80})","UTF-8");
     rejects(R"({\rtf1{\colortbl;\red256;}text})","color component");
     rejects("{\\rtf1 " + std::string(1,'\0') + "}","control byte");
-    rejects("{\\rtf1 " + std::string(512 * 1024,'a') + "}","too large");
+    rejects("{\\rtf1 " + std::string(25u * 1024u * 1024u,'a') + "}","too large");
+    {
+        const std::string start="{\\rtf1{\\*\\comment ",end="}Visible ending}";
+        const auto raw=start+std::string(25u*1024u*1024u-start.size()-end.size(),'x')+end;
+        require(render(raw).html.find("Visible ending")!=std::string::npos,"RTF accepts exactly 25 MiB and retains text after skipped metadata");
+    }
     require(rtf_supported("Document.RTF") && rtf_supported("file","application/rtf; charset=windows-1252") && rtf_supported("file","text/rtf"),"RTF filename and MIME recognition");
     require(!rtf_supported("document.rtf.exe") && !rtf_supported("file","text/plain"),"unrelated formats are not RTF");
 }

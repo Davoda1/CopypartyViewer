@@ -1,4 +1,4 @@
-// Copyparty Viewer 2.0.0 — Copyright (C) 2026 davoda1
+// Copyparty Viewer 2.1.0 — Copyright (C) 2026 davoda1
 // SPDX-License-Identifier: MIT
 #include "core.hpp"
 #include <curl/curl.h>

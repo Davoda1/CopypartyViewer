@@ -1,6 +1,6 @@
 # Building Copyparty Viewer
 
-Version **2.0.0**. Copyright (C) 2026 davoda1. The application is C++17. GNU Make is the entry point on both operating systems; CMake performs the project-local dependency builds and packaging. None of these tools is required to run the packaged application.
+Version **2.1.0**. Copyright (C) 2026 davoda1. The application is C++17. GNU Make is the entry point on both operating systems; CMake performs the project-local dependency builds and packaging. None of these tools is required to run the packaged application.
 
 ## Requirements
 
@@ -28,10 +28,10 @@ The repository and GitHub-generated source archives include the exact dependency
 
 ## Native build
 
-Clone the repository or download the release's automatically generated source archive. To check out version 2.0.0 specifically:
+Clone the repository or download the release's automatically generated source archive. To check out version 2.1.0 specifically:
 
 ```sh
-git clone --branch v2.0.0 --depth 1 https://github.com/Davoda1/CopypartyViewer.git
+git clone --branch v2.1.0 --depth 1 https://github.com/Davoda1/CopypartyViewer.git
 cd CopypartyViewer
 ```
 
@@ -54,8 +54,8 @@ mingw32-make package
 
 Default outputs are `build/native/app/copyparty-viewer` on Linux or `build/native/app/CopypartyViewer.exe` on Windows. Packaging writes to `dist/`:
 
-- Windows: `Copyparty-Viewer-2.0.0-Windows-x64.zip`.
-- Linux: `Copyparty-Viewer-2.0.0-Linux-amd64.tar.gz` and `copyparty-viewer_2.0.0_amd64.deb`.
+- Windows: `Copyparty-Viewer-2.1.0-Windows-x64.zip`.
+- Linux: `Copyparty-Viewer-2.1.0-Linux-amd64.tar.gz` and `copyparty-viewer_2.1.0_amd64.deb`.
 
 Each operating system builds and packages its native binary from the same source tree. Creating all three binary packages from one Linux workstation is also possible with the optional MinGW cross toolchain below. These are the only three assets uploaded to a GitHub release. GitHub generates its own source ZIP/TAR.GZ links from the release tag and computes the uploaded assets' SHA-256 digests.
 
@@ -137,6 +137,8 @@ Do not commit customized defaults or saved settings. The private file and genera
 
 FLTK is configured to use the pinned PNG, JPEG and zlib archives instead of its older bundled codec copies. Only the X11 backend is enabled on Linux; Wayland, OpenGL, FLUID, forms, examples and print support are disabled. Font rendering uses Xft/fontconfig. The Windows build uses native FLTK windows.
 
+The build applies two guarded, repeatable patches to the extracted FLTK sources. `cmake/PatchFltkHelpView.cmake` corrects table viewport sizing, column rounding and scrollbar reach. `cmake/PatchFltkTextDisplay.cmake` bounds native drawing and measurement of very long Source lines while retaining the text buffer. These helpers reject unexpected source layouts. The pinned FLTK archive and its checksum remain unchanged.
+
 curl supports HTTP and HTTPS only, with basic authentication and the threaded resolver. The curl command-line tool, SSH, LDAP, HTTP/2/3 and optional compression libraries are not built. gzip/deflate use the already included zlib. Linux OpenSSL has no shared libraries, loadable providers, applications, tests or documentation in the runtime package. Its standard provider is built into the executable. System CA certificates remain required on Linux. Windows certificate verification uses Schannel and the Windows certificate store.
 
 The Linux compatibility build uses GCC 10 and the portable WebP decoder because libwebp 1.6.0's AVX2 source uses an intrinsic absent from that compiler's headers. WebP decoding and first-frame support remain available. Builds with GCC 11 or newer enable WebP's CPU-dispatched SIMD. JPEG SIMD is enabled on both release platforms through NASM.
@@ -149,7 +151,7 @@ The Linux compatibility build uses GCC 10 and the portable WebP decoder because 
 
 `src/text_encoding.cpp` converts bounded previews to UTF-8. Auto uses BOMs, supported server charset declarations, conservative Unicode byte-alignment checks, valid UTF-8 and a CP1250 fallback. Explicit choices cover CP1250, CP1252 and UTF-8/16/32 in the documented byte orders. The existing text preparer normalizes CRLF/LF/CR and retains ordinary ANSI styles. Original downloads are unaffected. Unicode's mapping-data notice is included with the packages.
 
-Formatted previews are limited to 512 KiB. CSV adds row, column, field, cell-count and output limits documented in the README. Larger or unsupported documents retain source preview and a status explanation. Text input/display is bounded at 8 MiB. Markdown images become alternative-text links; raw HTML is escaped. Rendered links are inert identifiers in an in-memory registry until explicitly clicked. Matching server links use the viewer's normal boundary checks; external HTTP/HTTPS and query links go to the browser without application credentials.
+Formatted Markdown, RTF and CSV input is limited to 25 MiB. Decoding and Source preparation for these formats use that cap, and incomplete decoded input is never offered as a complete rendered document, including when code-page expansion is followed by CRLF normalization. CSV and RTF retain their existing output and structural limits; Markdown retains its existing parser behavior. CSV comments are skipped only at unquoted record boundaries, and its first non-comment record is bold. Ordinary text and code retain their 8 MiB input/display limit. Larger or unsupported documents retain source preview and a status explanation. Markdown images become alternative-text links; raw HTML is escaped. Rendered links are inert identifiers in an in-memory registry until explicitly clicked. Matching server links use the viewer's normal boundary checks; external HTTP/HTTPS and query links go to the browser without application credentials.
 
 Settings stores the code theme as `appearance.code_theme` in the existing JSON schema. Missing or invalid values use `default`; account, geometry and listing settings retain their existing meanings. The file encoding selector is local to the open file and resets to Auto when navigating.
 
@@ -222,6 +224,16 @@ build/native/app/retro-tests
 ```
 
 Use `retro-tests.exe` on Windows. On Linux, an existing X11 session or a developer-provided Xvfb display can host it. It is a source test tool and is not included in the binary packages.
+
+Two additional graphical harnesses exercise the 2.1.0 rendering fixes without changing the existing eight-suite CI inventory:
+
+```sh
+cmake --build build/native/app --target preview-layout-tests source-long-line-tests
+build/native/app/preview-layout-tests
+build/native/app/source-long-line-tests
+```
+
+Run them in an existing graphical session, or use a developer-provided Xvfb display on Linux. On Windows the executable names end in `.exe`. The layout harness covers adjacent pixel widths, multiple font sizes, scrollbars, wide CSV and hexadecimal byte tables. The Source harness covers long lines, horizontal endpoints, selection and UTF-8 boundaries. They are excluded from ordinary builds and runtime packages; the existing CI suites retain the input-limit and CSV regression cases.
 
 ## GitHub CI and releases
 

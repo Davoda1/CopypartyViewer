@@ -1,5 +1,6 @@
 // Copyright (C) 2026 davoda1 — SPDX-License-Identifier: MIT
 #include "preview.hpp"
+#include "text_encoding.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -50,6 +51,25 @@ int main(int argc,char** argv){
   auto invalid_utf8=prepare_styled_text({0xc0,0xaf,'A',0xed,0xa0,0x80});check(invalid_utf8.text.find('A')!=std::string::npos&&invalid_utf8.text.size()==invalid_utf8.styles.size(),"invalid UTF8 safely replaced and styles aligned");
   auto utf8=prepare_styled_text(bytes("\xef\xbb\xbfGr\xc3\xbc\xc3\x9f"));check(utf8.text=="Gr\xc3\xbc\xc3\x9f"&&utf8.text.size()==utf8.styles.size(),"UTF8 BOM removal and style alignment");
   auto oversize=std::vector<unsigned char>(8u*1024u*1024u+1,'x');auto truncated=prepare_text(oversize);check(truncated.find("Preview truncated at 8 MiB")!=std::string::npos,"text preview truncation notice");
+  constexpr std::size_t document_cap=25u*1024u*1024u;
+  auto document_text=prepare_styled_text(oversize,document_cap);
+  check(document_text.text.size()==oversize.size() && document_text.styles.size()==oversize.size(),"formatted text above 8 MiB remains complete with aligned styles");
+  oversize.assign(document_cap,'x');document_text=prepare_styled_text(oversize,document_cap);
+  check(document_text.text.size()==document_cap && document_text.styles.size()==document_cap,"formatted text accepts the exact 25 MiB boundary");
+  oversize.push_back('z');document_text=prepare_styled_text(oversize,document_cap);
+  check(document_text.text.find("Preview truncated at 25 MiB")!=std::string::npos && document_text.text.size()==document_text.styles.size(),"formatted text above 25 MiB has the correct truncation notice and aligned styles");
+  {
+   // 21 MiB of legacy bytes becomes 28 MiB of UTF-8. CRLF normalization
+   // then makes the bounded display smaller than 25 MiB despite truncation.
+   std::vector<unsigned char> legacy(21u*1024u*1024u);
+   for(std::size_t i=0;i<legacy.size();i+=3){legacy[i]=0xe9;legacy[i+1]='\r';legacy[i+2]='\n';}
+   const auto decoded=decode_text(legacy,"cp1250","text/markdown",document_cap);
+   const auto prepared=prepare_styled_text(bytes(decoded.text),document_cap);
+   check(!decoded.truncated && decoded.text.size()==28u*1024u*1024u &&
+     prepared.text.size()<document_cap && prepared.text.find('\r')==std::string::npos &&
+     prepared.text.find("Preview truncated at 25 MiB")!=std::string::npos && prepared.text.size()==prepared.styles.size(),
+     "CP1250 expansion beyond 25 MiB retains its truncation notice after CRLF normalization shrinks the display");
+  }
   check(text_supported("a.json","application/json",bytes("{\"x\": 1}")),"JSON text");check(text_supported("unknown","application/octet-stream",bytes("plain text\n")),"unknown UTF8 text");check(!text_supported("a.txt","text/plain",{'a',0,'b'}),"binary NUL rejection");
   check(text_supported("unicode.txt","text/plain",{0x16,0x4e,0x4c,0x75,0x3d,0xd8,0,0xde},true),"ambiguous BOM-less Unicode text keeps the encoding selector available");
   check(!text_supported("a.exe","application/octet-stream",{'a',0,'b'},true),"encoding override does not admit unknown binary files");

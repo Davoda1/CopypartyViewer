@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -17,5 +18,6 @@ std::string prepare_text(const std::vector<unsigned char>& bytes);
 // Byte-for-byte FLTK style map: A default, B bold; C..J = black, red,
 // green, yellow, blue, magenta, cyan, white; K..R = bold versions.
 struct PreparedText { std::string text, styles; };
-PreparedText prepare_styled_text(const std::vector<unsigned char>& bytes);
+PreparedText prepare_styled_text(const std::vector<unsigned char>& bytes,
+                                std::size_t byte_limit = 8u * 1024u * 1024u);
 }

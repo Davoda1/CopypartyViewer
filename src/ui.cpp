@@ -59,20 +59,27 @@ Fl_Color accent = fl_rgb_color(35, 105, 168);
 Fl_Color muted = fl_rgb_color(100, 107, 115);
 Fl_Color surface = FL_WHITE;
 bool dark_mode = false;
-constexpr std::size_t formatted_render_limit = 512u * 1024u;
+constexpr std::size_t formatted_render_limit = 25u * 1024u * 1024u;
 constexpr std::size_t text_input_limit = 8u * 1024u * 1024u;
 const std::array<const char*,8> encoding_ids={"auto","utf8","utf16le","utf16be","utf32le","utf32be","cp1250","cp1252"};
 
-struct DecodedPreview { PreparedText source; std::string encoding; bool supported=false; };
+struct DecodedPreview { PreparedText source; std::string encoding; bool supported=false,truncated=false; };
+std::size_t preview_input_limit(const std::string& name,const std::string& content_type) {
+    return document::markdown_supported(name,content_type)||document::csv_supported(name,content_type)||
+        document::rtf_supported(name,content_type)?formatted_render_limit:text_input_limit;
+}
 DecodedPreview decode_preview(const std::vector<unsigned char>& bytes,const std::string& name,
         const std::string& content_type,const std::string& choice="auto") {
-    auto decoded=decode_text(bytes,choice,content_type);
+    const auto byte_limit=preview_input_limit(name,content_type);
+    auto decoded=decode_text(bytes,choice,content_type,byte_limit);
     std::vector<unsigned char> utf8(decoded.text.begin(),decoded.text.end());
     DecodedPreview result;result.encoding=std::move(decoded.encoding);
+    result.truncated=decoded.truncated||decoded.text.size()>byte_limit;
     result.supported=text_supported(name,content_type,utf8,true);
-    result.source=prepare_styled_text(utf8);
-    if(decoded.truncated&&result.source.text.find("[Preview truncated at 8 MiB.")==std::string::npos) {
-        const std::string note="\n\n[Preview truncated at 8 MiB. Download the file to read it in full.]\n";
+    result.source=prepare_styled_text(utf8,byte_limit);
+    const std::string truncation="[Preview truncated at "+std::to_string(byte_limit/(1024u*1024u))+" MiB.";
+    if(decoded.truncated&&result.source.text.find(truncation)==std::string::npos) {
+        const std::string note="\n\n"+truncation+" Download the file to read it in full.]\n";
         result.source.text+=note;result.source.styles.append(note.size(),'A');
     }
     return result;
@@ -650,12 +657,12 @@ public:
             preview_renderable=false;preview_document={};
             if(preview_markdown||preview_csv) {
                 idle_status=prefix+preview_format_name();
-                if(preview_text.size()<=formatted_render_limit) {
+                if(!decoded.truncated&&preview_size<=formatted_render_limit&&preview_text.size()<=formatted_render_limit) {
                     try {
                         preview_document=preview_csv?make_csv(preview_text,dark_mode):make_markdown(preview_text,config.code_theme,dark_mode);
                         preview_renderable=true;
                     }catch(const std::exception&e){idle_status+=" source · "+std::string(e.what());}
-                }else idle_status+=" source · Rendered preview limit: 512 KiB";
+                }else idle_status+=" source · Rendered preview limit: 25 MiB";
             }
             preview_document_theme=config.code_theme;preview_document_dark=dark_mode;
             text_buffer.text(preview_text.c_str());style_buffer.text(preview_styles.c_str());text_display->scroll(1,0);
@@ -841,13 +848,13 @@ public:
                         // binary object bytes. Source decoding must never gate its parser.
                         DecodedPreview prepared;
                         if(job->is_rtf) {
-                            try {prepared=decode_preview(response.bytes,name,"");}
-                            catch(const std::exception&) {prepared.source=prepare_styled_text(response.bytes);}
+                            try {prepared=decode_preview(response.bytes,name,"application/rtf");}
+                            catch(const std::exception&) {prepared.source=prepare_styled_text(response.bytes,formatted_render_limit);}
                         }else prepared=decode_preview(response.bytes,name,response.content_type);
                         if(job->is_rtf||prepared.supported) {
                             job->text=std::move(prepared.source.text);job->styles=std::move(prepared.source.styles);job->text_encoding=std::move(prepared.encoding);job->is_text=true;
                             job->text_size=response.bytes.size();job->content_type=response.content_type;
-                            if(!job->is_rtf)job->raw_text.assign(response.bytes.begin(),response.bytes.begin()+std::min(response.bytes.size(),text_input_limit+1));
+                            if(!job->is_rtf)job->raw_text.assign(response.bytes.begin(),response.bytes.begin()+std::min(response.bytes.size(),preview_input_limit(name,response.content_type)+1));
                             const std::string description=human_size(response.bytes.size())+" · "+(job->is_rtf?"":job->text_encoding+" · ");
                             job->detail=description+"Read-only text";
                             job->is_markdown=!job->is_rtf&&document::markdown_supported(name,response.content_type);
@@ -862,7 +869,7 @@ public:
                                 const std::string format=job->is_rtf?"RTF":job->is_csv?"CSV":"Markdown";
                                 const std::string prefix=description+format;
                                 const auto render_size=job->is_rtf?response.bytes.size():job->text.size();
-                                if(render_size<=formatted_render_limit) {
+                                if((job->is_rtf||!prepared.truncated)&&response.bytes.size()<=formatted_render_limit&&render_size<=formatted_render_limit) {
                                     try {
                                         if(job->is_rtf) {
                                             job->raw_rtf.assign(response.bytes.begin(),response.bytes.end());
@@ -872,7 +879,7 @@ public:
                                         }else job->rendered_document=job->is_csv?make_csv(job->text,job->dark):make_markdown(job->text,job->snapshot.code_theme,job->dark);
                                         job->renderable_document=true;job->detail=prefix;
                                     }catch(const std::exception&e){job->detail=prefix+" source · "+std::string(e.what());}
-                                }else job->detail=prefix+" source · Rendered preview limit: 512 KiB";
+                                }else job->detail=prefix+" source · Rendered preview limit: 25 MiB";
                             }
                         }else job->detail="Preview is not available for this file.\n\nUse Save As to download it, or open it in your browser.";
                     }

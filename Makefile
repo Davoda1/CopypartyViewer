@@ -1,6 +1,6 @@
-# Copyparty Viewer 2.0.0 — native GNU make / mingw32-make entry point.
+# Copyparty Viewer 2.1.0 — native GNU make / mingw32-make entry point.
 # CMake is a build tool only. The delivered application is one real executable.
-PROJECT_VERSION := 2.0.0
+PROJECT_VERSION := 2.1.0
 CMAKE ?= cmake
 BUILD_DIR ?= build/native
 JOBS ?= 4

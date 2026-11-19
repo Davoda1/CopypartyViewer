@@ -1,4 +1,4 @@
-// Copyparty Viewer 2.0.0 — Copyright (C) 2026 davoda1
+// Copyparty Viewer 2.1.0 — Copyright (C) 2026 davoda1
 // SPDX-License-Identifier: MIT
 #include "preview.hpp"
 #include <png.h>
@@ -23,7 +23,6 @@ namespace cpv {
 namespace {
 constexpr std::uint64_t max_pixels = 64ull * 1024 * 1024;
 constexpr std::size_t max_input = 64u * 1024u * 1024u;
-constexpr std::size_t max_text = 8u * 1024u * 1024u;
 constexpr std::uint32_t max_dimension = 32768;
 [[noreturn]] void invalid(const std::string& detail) {
     throw std::runtime_error("Cannot preview image: " + detail + ". You can download it or open it in your browser.");
@@ -458,8 +457,8 @@ bool text_supported(const std::string& filename,const std::string& content_type,
     return known || (invalid_utf8==0 && (type.empty()||type=="application/octet-stream"||type=="binary/octet-stream"));
 }
 
-PreparedText prepare_styled_text(const std::vector<unsigned char>& bytes) {
-    PreparedText result;result.text.reserve(std::min(bytes.size(),max_text));result.styles.reserve(std::min(bytes.size(),max_text));
+PreparedText prepare_styled_text(const std::vector<unsigned char>& bytes,std::size_t byte_limit) {
+    PreparedText result;result.text.reserve(std::min(bytes.size(),byte_limit));result.styles.reserve(std::min(bytes.size(),byte_limit));
     bool bold=false;int foreground=-1;
     auto style=[&]() {return foreground<0 ? (bold?'B':'A') : static_cast<char>((bold?'K':'C')+foreground);};
     auto append=[&](const char* s,std::size_t n) {result.text.append(s,n);result.styles.append(n,style());};
@@ -493,7 +492,7 @@ PreparedText prepare_styled_text(const std::vector<unsigned char>& bytes) {
             }
         }
     };
-    std::size_t i=0,limit=std::min(bytes.size(),max_text);
+    std::size_t i=0,limit=std::min(bytes.size(),byte_limit);
     if(limit>=3&&bytes[0]==0xef&&bytes[1]==0xbb&&bytes[2]==0xbf)i=3;
     while(i<limit) {
         const unsigned char c=bytes[i];
@@ -514,7 +513,7 @@ PreparedText prepare_styled_text(const std::vector<unsigned char>& bytes) {
         const auto n=utf8_length(bytes.data()+i,limit-i);
         if(n){append(reinterpret_cast<const char*>(bytes.data()+i),n);i+=n;}else{append("\xef\xbf\xbd",3);++i;}
     }
-    if(bytes.size()>limit){bold=false;foreground=-1;const std::string note="\n\n[Preview truncated at 8 MiB. Download the file to read it in full.]\n";append(note.data(),note.size());}
+    if(bytes.size()>limit){bold=false;foreground=-1;const std::string note="\n\n[Preview truncated at "+std::to_string(byte_limit/(1024u*1024u))+" MiB. Download the file to read it in full.]\n";append(note.data(),note.size());}
     return result;
 }
 std::string prepare_text(const std::vector<unsigned char>& bytes) {return prepare_styled_text(bytes).text;}

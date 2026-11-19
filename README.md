@@ -4,7 +4,7 @@
 
 A small, read-only desktop client for [Copyparty](https://github.com/9001/copyparty), written in C++17 with FLTK and libcurl. Browse directories, preview documents, code and images, and download individual files on Windows or Linux.
 
-**[Download v2.0.0](https://github.com/Davoda1/CopypartyViewer/releases/tag/v2.0.0)** · [Build from source](BUILDING.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
+**[Download v2.1.0](https://github.com/Davoda1/CopypartyViewer/releases/tag/v2.1.0)** · [Build from source](BUILDING.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
 
 ## Features
 
@@ -20,6 +20,13 @@ A small, read-only desktop client for [Copyparty](https://github.com/9001/copypa
 - **Compact native packages.** One real application executable, with application libraries linked statically where practical. No launcher scripts, companion application DLLs or separate curl program.
 
 The default server is the official public demo at **https://a.ocv.me/pub/**. Release executables contain **no embedded username or password**. The viewer has no server upload, rename, deletion or editing commands.
+
+## New in 2.1.0
+
+- Keeps full-width Markdown tables within the preview viewport with a small margin beside the vertical scrollbar, and corrects horizontal scroll reach and column rounding.
+- Omits standalone CSV `#` comments from Rendered view and displays the first non-comment record in bold.
+- Raises formatted-document input from 512 KiB to **25 MiB**, including decoding and Source preparation. Existing CSV row, column, field, cell-count and output limits still apply.
+- Handles very long Source lines without oversized native drawing requests. Existing settings, title bars and executable names are preserved.
 
 ## Screenshots
 
@@ -43,11 +50,11 @@ The native document preview with the Nord code theme, rendered Markdown and a ta
 
 | Platform | Release asset | Start |
 | --- | --- | --- |
-| Windows x64 | [Copyparty-Viewer-2.0.0-Windows-x64.zip](https://github.com/Davoda1/CopypartyViewer/releases/download/v2.0.0/Copyparty-Viewer-2.0.0-Windows-x64.zip) | Extract and run `CopypartyViewer.exe`. |
-| Debian-family Linux amd64 | [copyparty-viewer_2.0.0_amd64.deb](https://github.com/Davoda1/CopypartyViewer/releases/download/v2.0.0/copyparty-viewer_2.0.0_amd64.deb) | Install with the package manager. |
-| Linux amd64 | [Copyparty-Viewer-2.0.0-Linux-amd64.tar.gz](https://github.com/Davoda1/CopypartyViewer/releases/download/v2.0.0/Copyparty-Viewer-2.0.0-Linux-amd64.tar.gz) | Run directly or install manually with `sudo`. |
+| Windows x64 | [Copyparty-Viewer-2.1.0-Windows-x64.zip](https://github.com/Davoda1/CopypartyViewer/releases/download/v2.1.0/Copyparty-Viewer-2.1.0-Windows-x64.zip) | Extract and run `CopypartyViewer.exe`. |
+| Debian-family Linux amd64 | [copyparty-viewer_2.1.0_amd64.deb](https://github.com/Davoda1/CopypartyViewer/releases/download/v2.1.0/copyparty-viewer_2.1.0_amd64.deb) | Install with the package manager. |
+| Linux amd64 | [Copyparty-Viewer-2.1.0-Linux-amd64.tar.gz](https://github.com/Davoda1/CopypartyViewer/releases/download/v2.1.0/Copyparty-Viewer-2.1.0-Linux-amd64.tar.gz) | Run directly or install manually with `sudo`. |
 
-The release has these three uploaded binary assets. GitHub supplies the **Source code (zip)** and **Source code (tar.gz)** downloads automatically on the [release page](https://github.com/Davoda1/CopypartyViewer/releases/tag/v2.0.0). They contain the repository at the release tag.
+The release has these three uploaded binary assets. GitHub supplies the **Source code (zip)** and **Source code (tar.gz)** downloads automatically on the [release page](https://github.com/Davoda1/CopypartyViewer/releases/tag/v2.1.0). They contain the repository at the release tag.
 
 ### Requirements
 
@@ -60,14 +67,14 @@ The application needs normal operating-system services for windows, fonts, netwo
 
 ### Verify a download
 
-GitHub computes a SHA-256 digest for each uploaded release asset. The `assets` entries in the [v2.0.0 release metadata](https://api.github.com/repos/Davoda1/CopypartyViewer/releases/tags/v2.0.0) contain each asset's filename and `digest` in `sha256:...` form. Compare the matching digest with a locally calculated hash:
+GitHub computes a SHA-256 digest for each uploaded release asset. The `assets` entries in the [v2.1.0 release metadata](https://api.github.com/repos/Davoda1/CopypartyViewer/releases/tags/v2.1.0) contain each asset's filename and `digest` in `sha256:...` form. Compare the matching digest with a locally calculated hash:
 
 ```powershell
-Get-FileHash .\Copyparty-Viewer-2.0.0-Windows-x64.zip -Algorithm SHA256
+Get-FileHash .\Copyparty-Viewer-2.1.0-Windows-x64.zip -Algorithm SHA256
 ```
 
 ```sh
-sha256sum Copyparty-Viewer-2.0.0-Linux-amd64.tar.gz
+sha256sum Copyparty-Viewer-2.1.0-Linux-amd64.tar.gz
 ```
 
 The digest refers to the uploaded binary asset with that exact filename. GitHub's automatically generated source downloads are separate from the three binary assets.
@@ -83,7 +90,7 @@ Extract the ZIP and run **CopypartyViewer.exe**. No installer is needed. Configu
 From the directory containing the package:
 
 ```sh
-sudo apt install ./copyparty-viewer_2.0.0_amd64.deb
+sudo apt install ./copyparty-viewer_2.1.0_amd64.deb
 copyparty-viewer
 ```
 
@@ -100,9 +107,9 @@ Your per-user configuration is retained.
 The TAR.GZ contains the executable at its root. Extract it into a dedicated directory:
 
 ```sh
-mkdir -p Copyparty-Viewer-2.0.0
-tar -xzf Copyparty-Viewer-2.0.0-Linux-amd64.tar.gz -C Copyparty-Viewer-2.0.0
-cd Copyparty-Viewer-2.0.0
+mkdir -p Copyparty-Viewer-2.1.0
+tar -xzf Copyparty-Viewer-2.1.0-Linux-amd64.tar.gz -C Copyparty-Viewer-2.1.0
+cd Copyparty-Viewer-2.1.0
 ./copyparty-viewer
 ```
 
@@ -177,7 +184,7 @@ Size sorting keeps unknown values after known values in both directions. When di
 
 Images fit the preview pane while preserving proportions, with a checkerboard for transparency. Animated files can be downloaded or opened in a browser for full playback. The application does not execute HTML or SVG scripts.
 
-Preview transfers are limited to 64 MiB, directory listings to 16 MiB, and text input/display to 8 MiB. Formatted Markdown, RTF and CSV previews have a 512 KiB limit; larger or unsupported documents open as source with a status message. Image decoding is bounded to 64 megapixels and 32,768 pixels per dimension. SVG source has a 4 MiB limit and its raster preview is limited to 4,096 pixels per dimension. Text truncation is indicated. Use Save As for files larger than the preview limits.
+Preview transfers are limited to 64 MiB and directory listings to 16 MiB. Ordinary text and code previews retain their 8 MiB limit. Markdown, RTF and CSV input and their text-decoding path support **25 MiB**; decoded formatted text must also fit that limit. Additional format-specific limits still apply, and unsupported or oversized documents open as source with a status message. Image decoding is bounded to 64 megapixels and 32,768 pixels per dimension. SVG source has a 4 MiB limit and its raster preview is limited to 4,096 pixels per dimension. Text truncation is indicated. Use Save As for files larger than the preview limits.
 
 ### Text encodings and line endings
 
@@ -205,9 +212,9 @@ RTF uses a white document surface and the document's text colors even when the a
 
 ### CSV and TSV tables
 
-CSV and TSV files open as tables. Quoted delimiters, doubled quotes, embedded line breaks, empty cells and trailing fields are preserved. Comma, semicolon and tab delimiters are detected from the data; an optional Excel `sep=` line can select one explicitly. Every actual row is treated as data, including the first. Short rows receive empty cells to fit the table. Formula-like values and URLs remain literal cell text.
+CSV and TSV files open as tables. Quoted delimiters, doubled quotes, embedded line breaks, empty cells and trailing fields are preserved. Comma, semicolon and tab delimiters are detected from the data; an optional Excel `sep=` line can select one explicitly. Standalone comment records beginning with `#`, optionally preceded by spaces, are omitted from Rendered view. Hashes inside quoted fields, quoted multiline content and later fields remain data. The first non-comment record is displayed in bold. Short rows receive empty cells to fit the table. Formula-like values and URLs remain literal cell text.
 
-Use **Source / Rendered** to switch between the delimited text and table view. To keep the native table responsive, preview is limited to **500 rows**, **64 columns**, **10,000 displayed cells**, **16 KiB per field**, **512 KiB of input** and **2 MiB of generated table markup**. Malformed quoting or a limit reached produces a source preview with a status message. You can still download the complete original file.
+Use **Source / Rendered** to switch between the delimited text and table view; Source retains comment lines. To keep the native table responsive, preview is limited to **500 rows**, **64 columns**, **10,000 displayed cells**, **16 KiB per field**, **25 MiB of input** and **2 MiB of generated table markup**. Malformed quoting or a limit reached produces a source preview with a status message. You can still download the complete original file.
 
 ## Settings
 

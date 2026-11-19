@@ -10,7 +10,7 @@
 
 namespace cpv::document {
 namespace {
-constexpr std::size_t max_input = 512 * 1024, max_output = 8 * 1024 * 1024;
+constexpr std::size_t max_input = 25u * 1024u * 1024u, max_output = 8u * 1024u * 1024u;
 constexpr std::size_t max_depth = 256, max_colors = 4096;
 bool letter(unsigned char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
 bool digit(unsigned char c) { return c >= '0' && c <= '9'; }

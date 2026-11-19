@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0
+
+- Corrects native table sizing, column rounding and horizontal scroll reach while retaining full-width Markdown tables and a small margin beside the vertical scrollbar.
+- Omits standalone CSV `#` comment records from Rendered view and displays the first non-comment record in bold. Quoted hashes, multiline quoted text and hashes in later fields remain data; Source and downloads preserve the original comments.
+- Raises formatted Markdown, RTF and CSV input from 512 KiB to 25 MiB, including decoding and Source preparation. Explicit truncation tracking prevents incomplete decoded input from becoming a rendered document. Existing CSV row, column, field, cell-count and output limits remain in place.
+- Handles very long Source lines in bounded native drawing and measurement batches, including horizontal navigation and UTF-8 boundaries.
+- Preserves settings compatibility, public demo defaults, empty compiled credentials, MIT licensing, davoda1 attribution, unversioned title bars and established executable names. Pinned dependencies and existing CI/publication gates are unchanged.
+
 ## 2.0.0
 
 - Adds native Markdown rendering for headings, emphasis, lists, quotations, tables, task markers, links and code blocks, with a Source / Rendered switch.

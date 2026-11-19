@@ -151,9 +151,21 @@ void safety_and_links() {
     require(language_for_filename("/folder/file.PS1") == "powershell" && language_for_filename("source.ts") == "typescript" && language_for_filename("page.html") == "xml", "source extension language selection");
     require(language_for_filename("unknown.bin") == "plaintext", "unknown extension plain fallback");
 }
+void input_size() {
+    constexpr std::size_t cap=25u*1024u*1024u;
+    std::string text(cap,' ');
+    const std::string marker="\n\nEnd of full document";
+    text.replace(text.size()-marker.size(),marker.size(),marker);
+    contains(render(text).html,"End of full document","Markdown accepts exactly 25 MiB and preserves its ending");
+    text.push_back('x');
+    bool rejected=false;
+    try { (void)render(text); }
+    catch(const std::length_error& error) { rejected=std::string(error.what()).find("25 MiB")!=std::string::npos; }
+    require(rejected,"Markdown rejects input above 25 MiB with its formatted-preview limit");
+}
 }
 int main() {
-    try { palettes(); highlighting(); markdown(); safety_and_links(); }
+    try { palettes(); highlighting(); markdown(); safety_and_links(); input_size(); }
     catch (const std::exception& error) { std::cerr << "Document tests FAILED: " << error.what() << '\n'; return 1; }
     std::cout << "Document tests passed: " << checks << " checks\n";
     return 0;

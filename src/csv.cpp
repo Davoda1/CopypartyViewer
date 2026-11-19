@@ -9,7 +9,7 @@
 
 namespace cpv::document {
 namespace {
-constexpr std::size_t max_input=512u*1024u, max_output=2u*1024u*1024u;
+constexpr std::size_t max_input=25u*1024u*1024u, max_output=2u*1024u*1024u;
 constexpr std::size_t max_rows=500, max_columns=64, max_cells=10000, max_field=16u*1024u;
 constexpr std::array<char,3> delimiters={',',';','\t'};
 std::string lower(std::string text) {
@@ -41,6 +41,17 @@ void append_escaped(std::string& out,const std::string& value) {
         leading=false;
     }
 }
+std::size_t comment_end(std::string_view text,std::size_t start) {
+    // Call only at a record boundary. Tabs cannot be skipped here: in TSV,
+    // a leading tab is an empty first cell, even when the next cell starts #.
+    auto first=start;
+    while(first<text.size()&&text[first]==' ')++first;
+    if(first==text.size()||text[first]!='#')return start;
+    auto end=text.find_first_of("\r\n",first+1);
+    if(end==std::string_view::npos)return text.size();
+    if(text[end]=='\r'&&end+1<text.size()&&text[end+1]=='\n')++end;
+    return end+1;
+}
 char detect_delimiter(std::string_view text) {
     // A shared quote-aware sample keeps delimiter-like text inside quoted
     // fields out of the score. Consistent logical records outrank raw counts.
@@ -48,6 +59,10 @@ char detect_delimiter(std::string_view text) {
     std::array<std::size_t,3> counts{};
     bool quoted=false,nonempty=false;
     for(std::size_t i=0;i<text.size()&&sample.size()<32;++i) {
+        if(!quoted&&!nonempty) {
+            const auto next=comment_end(text,i);
+            if(next!=i){i=next-1;continue;}
+        }
         const char c=text[i];
         if(c=='"') {
             nonempty=true;
@@ -101,6 +116,10 @@ std::vector<Row> parse(std::string_view input,char delimiter) {
         value+=c;
     };
     for(std::size_t i=0;i<input.size();++i) {
+        if(state==Field::start&&row.empty()) {
+            const auto next=comment_end(input,i);
+            if(next!=i){i=next-1;continue;}
+        }
         const char c=input[i];
         if(state==Field::quoted) {
             if(c=='"') {
@@ -135,9 +154,14 @@ bool csv_supported(const std::string& filename,const std::string& content_type) 
 }
 RenderedDocument render_csv(const std::string& decoded_utf8,const std::string& foreground_hex,
                            const std::string& background_hex,const std::string& border_hex) {
-    if(decoded_utf8.size()>max_input)throw std::runtime_error("CSV exceeds the 512 KiB formatted-preview limit. Use Source.");
+    if(decoded_utf8.size()>max_input)throw std::runtime_error("CSV exceeds the 25 MiB formatted-preview limit. Use Source.");
     std::string_view input=decoded_utf8;
     if(input.substr(0,3)=="\xef\xbb\xbf")input.remove_prefix(3);
+    while(!input.empty()) {
+        const auto next=comment_end(input,0);
+        if(!next)break;
+        input.remove_prefix(next);
+    }
     char delimiter=',';
     const auto line_end=input.find_first_of("\r\n");
     const auto first=input.substr(0,line_end);
@@ -159,15 +183,18 @@ RenderedDocument render_csv(const std::string& decoded_utf8,const std::string& f
     html="<HTML><BODY TEXT=\""+fg+"\" BGCOLOR=\""+bg+"\">\n";
     if(rows.empty())html+="<P>This file contains no rows.</P>\n";
     else {
-        // Let the native view size columns from their contents. Percentage
-        // widths include FLTK's outer table margin and can clip the last cell.
+        // Preserve CSV's content-derived column widths; wide tables scroll
+        // horizontally within the native preview viewport.
         html+="<TABLE BORDER=\"1\" BGCOLOR=\""+border+"\">\n";
-        for(const auto& row:rows) {
+        for(std::size_t index=0;index<rows.size();++index) {
+            const auto& row=rows[index];
             html+="<TR>";
             for(std::size_t column=0;column<columns;++column) {
                 html+="<TD ALIGN=\"LEFT\" BGCOLOR=\""+bg+"\">";
+                if(index==0)html+="<B>";
                 if(column<row.size()&&!row[column].empty())append_escaped(html,row[column]);
                 else html+="&nbsp;";
+                if(index==0)html+="</B>";
                 html+="</TD>";
                 if(html.size()>max_output)throw std::runtime_error("CSV formatted output exceeds 2 MiB. Use Source.");
             }

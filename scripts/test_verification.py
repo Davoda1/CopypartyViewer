@@ -325,7 +325,7 @@ class FakeAPI:
                         "updated_at": "2026-01-01T00:00:00Z"}
                        for i, name in enumerate(packages.NAMES.values(), 1)]
         self.release = {"id": 8, "draft": True, "prerelease": False, "tag_name": gate.TAG,
-                        "target_commitish": SHA, "name": "2.0.0", "body": "Release notes", "assets": self.assets}
+                        "target_commitish": SHA, "name": packages.VERSION, "body": "Release notes", "assets": self.assets}
         self.master = SHA
         self.tag = SHA
         self.alerts = []
@@ -393,7 +393,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_other_revision_branch_workflow_or_repository_block(self):
         for key, value in (("head_sha", "b" * 40), ("head_branch", "topic"), ("event", "pull_request"),
-                           ("head_branch", "preflight-2.0.0-test"), ("event", "workflow_dispatch"),
+                           ("head_branch", "preflight-" + packages.VERSION + "-test"), ("event", "workflow_dispatch"),
                            ("workflow_id", 3), ("repository", {"full_name": "example/other"})):
             api = FakeAPI()
             api.run[key] = value
@@ -500,7 +500,7 @@ class ReleaseTests(unittest.TestCase):
         result = {name: {"sha256": sha} for name, sha in HASHES.items()}
         with patch.object(gate, "verify_packages", return_value=result):
             url = gate.publish(api, Path("."), SHA, 7, 8, HASHES, receipt)
-        self.assertTrue(url.endswith("/releases/tag/v2.0.0"))
+        self.assertTrue(url.endswith("/releases/tag/" + gate.TAG))
         self.assertEqual([(path, method, body) for path, method, body in api.calls if method != "GET"],
                          [("releases/8", "PATCH", {"draft": False, "make_latest": "true"})])
 

@@ -61,12 +61,21 @@ function(cpv_dep name)
   if(NOT EXISTS "${archive}")
     message(FATAL_ERROR "Missing pinned archive ${archive}. Run 'make fetch-deps' first or use the complete source release.")
   endif()
+  set(patch_command "")
+  if(name STREQUAL "fltk")
+    set(patch_command PATCH_COMMAND "${CMAKE_COMMAND}"
+      "-DCPV_FLTK_SOURCE_DIR=<SOURCE_DIR>"
+      -P "${CMAKE_SOURCE_DIR}/cmake/PatchFltkHelpView.cmake"
+      COMMAND "${CMAKE_COMMAND}" "-DCPV_FLTK_SOURCE_DIR=<SOURCE_DIR>"
+      -P "${CMAKE_SOURCE_DIR}/cmake/PatchFltkTextDisplay.cmake")
+  endif()
   ExternalProject_Add(dep-${name}
     URL "${archive}" URL_HASH "SHA256=${CPV_${name}_SHA256}"
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     SOURCE_DIR "${dep_root}/src/${name}"
     BINARY_DIR "${dep_root}/build/${name}"
     STAMP_DIR "${dep_root}/stamp/${name}"
+    ${patch_command}
     CMAKE_ARGS ${common} ${D_ARGS}
     BUILD_COMMAND "${CMAKE_COMMAND}" --build <BINARY_DIR> --parallel ${CPV_JOBS}
     INSTALL_COMMAND "${CMAKE_COMMAND}" --install <BINARY_DIR>

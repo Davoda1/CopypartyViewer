@@ -1,4 +1,4 @@
-// Copyparty Viewer 2.0.0 — Copyright (C) 2026 davoda1
+// Copyparty Viewer 2.1.0 — Copyright (C) 2026 davoda1
 // SPDX-License-Identifier: MIT
 #include "text_encoding.hpp"
 #include <algorithm>
@@ -8,7 +8,6 @@
 
 namespace cpv {
 namespace {
-constexpr std::size_t input_limit = 8u * 1024u * 1024u;
 constexpr std::uint32_t replacement = 0xfffd;
 enum class Encoding { Unknown, Utf8, Utf16LE, Utf16BE, Utf32LE, Utf32BE, Cp1250, Cp1252 };
 
@@ -188,9 +187,9 @@ const char* label(Encoding e) {
 }
 } // namespace
 
-DecodedText decode_text(const std::vector<unsigned char>& bytes,const std::string& choice,const std::string& content_type) {
+DecodedText decode_text(const std::vector<unsigned char>& bytes,const std::string& choice,const std::string& content_type,std::size_t byte_limit) {
     DecodedText result;
-    const auto limit=std::min(bytes.size(),input_limit);
+    const auto limit=std::min(bytes.size(),byte_limit);
     result.truncated=bytes.size()>limit;
     Encoding encoding=named(choice);
     if(encoding==Encoding::Unknown) {

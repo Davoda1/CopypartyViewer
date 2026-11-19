@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(CopypartyViewer VERSION 2.0.0 LANGUAGES C CXX)
+project(CopypartyViewer VERSION 2.1.0 LANGUAGES C CXX)
 
 option(CPV_SUPERBUILD "Build the pinned private static dependencies first" ON)
 option(CPV_BUILD_TESTS "Build meaningful core and preview regression tests" ON)
@@ -154,6 +154,12 @@ if(CPV_BUILD_TESTS)
     add_executable(retro-tests EXCLUDE_FROM_ALL tests/retro_tests.cpp src/retro.cpp)
   endif()
   target_link_libraries(retro-tests PRIVATE cpv_preview)
+  # Explicit native document geometry checks; a display is required.
+  add_executable(preview-layout-tests EXCLUDE_FROM_ALL tests/preview_layout_tests.cpp)
+  target_link_libraries(preview-layout-tests PRIVATE cpv_document fltk::fltk)
+  # Source rendering beyond the formatted-preview cap also requires a display.
+  add_executable(source-long-line-tests EXCLUDE_FROM_ALL tests/source_long_line_tests.cpp)
+  target_link_libraries(source-long-line-tests PRIVATE fltk::fltk)
   if(MINGW)
     target_link_options(core-tests PRIVATE -static -static-libgcc -static-libstdc++)
     target_link_options(preview-tests PRIVATE -static -static-libgcc -static-libstdc++)
@@ -162,6 +168,8 @@ if(CPV_BUILD_TESTS)
     target_link_options(csv-tests PRIVATE -static -static-libgcc -static-libstdc++)
     target_link_options(text-encoding-tests PRIVATE -static -static-libgcc -static-libstdc++)
     target_link_options(retro-tests PRIVATE -static -static-libgcc -static-libstdc++)
+    target_link_options(preview-layout-tests PRIVATE -static -static-libgcc -static-libstdc++)
+    target_link_options(source-long-line-tests PRIVATE -static -static-libgcc -static-libstdc++)
   endif()
 endif()
 

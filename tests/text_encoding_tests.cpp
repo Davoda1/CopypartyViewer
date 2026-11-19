@@ -1,4 +1,4 @@
-// Copyparty Viewer 2.0.0 — Copyright (C) 2026 davoda1
+// Copyparty Viewer 2.1.0 — Copyright (C) 2026 davoda1
 // SPDX-License-Identifier: MIT
 #include "text_encoding.hpp"
 #include <iostream>
@@ -104,6 +104,14 @@ int main() {
         d=cpv::decode_text(bounded,"cp1252");
         require(d.truncated && d.text.size()==cap*3,"legacy expansion is bounded to three bytes per input byte");
         require(bounded.size()==cap+1 && bounded.front()==0x81,"original bytes remain untouched");
+        constexpr std::size_t document_cap=25u*1024u*1024u;
+        bounded.assign(document_cap,'a');
+        d=cpv::decode_text(bounded,"auto","text/csv",document_cap);
+        require(!d.truncated && d.text.size()==document_cap,"formatted document decoding accepts exactly 25 MiB without the plain-text 8 MiB cutoff");
+        bounded.push_back('z');
+        d=cpv::decode_text(bounded,"utf8","text/markdown",document_cap);
+        require(d.truncated && d.text.size()==document_cap && d.text.back()=='a',"formatted document decoding bounds input at 25 MiB");
+        require(bounded.back()=='z' && bounded.size()==document_cap+1,"formatted decoding leaves the original download bytes intact");
         std::cout<<"Text encoding tests passed: "<<checks<<" checks\n";
         return 0;
     }catch(const std::exception& e){std::cerr<<"Text encoding tests FAILED: "<<e.what()<<'\n';return 1;}
